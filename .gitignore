@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Сборка PyInstaller (бинарники не храним в репозитории — используйте Releases)
+build/
+dist/
+
+# Локальные данные приложения (обычно лежат в %LOCALAPPDATA% и т.п.)
+analyzer.db
+analyzer.db-*
+settings.json
+rules.json
+
+# Старые резервные копии
+v 0/
+v 0.zip
+*.zip
+
+# Локальные настройки инструментов
+.claude/
+
+# ОС / редакторы
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
