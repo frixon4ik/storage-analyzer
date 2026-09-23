@@ -1,6 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Генерация иконки приложения: питон (змейка) с лупой. Создаёт app_icon.ico и .png."""
+"""Генерация иконки приложения: питон (змейка) с лупой. Создаёт app_icon.ico и .png.
+
+    python make_icon.py            # app_icon.png + app_icon.ico (+ простой .icns)
+    python make_icon.py --macos    # только app_icon.icns по сетке macOS (нужен iconutil)
+"""
 import math
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 
 from PIL import Image, ImageDraw
 
@@ -19,7 +28,7 @@ def rounded_mask(size, radius):
     return m
 
 
-def make():
+def make(macos_only=False):
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
 
     # --- фон: вертикальный градиент (синий) со скруглением
@@ -90,6 +99,10 @@ def make():
     d.line([(hx0, hy0), (hx1, hy1)], fill=(245, 180, 0, 255), width=int(34 * SS))
     d.line([(hx0, hy0), (hx1, hy1)], fill=(180, 130, 0, 255), width=int(10 * SS))
 
+    if macos_only:
+        make_macos_icns(img)
+        return
+
     out = img.resize((256, 256), Image.LANCZOS)
     out.save("app_icon.png")
     sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
@@ -103,5 +116,34 @@ def make():
     print("Сохранено:", saved)
 
 
+def make_macos_icns(art, path="app_icon.icns"):
+    """.icns по сетке Apple: рисунок 824×824 по центру холста 1024 + мягкая тень."""
+    from PIL import ImageFilter
+
+    canvas = 1024
+    body = art.resize((824, 824), Image.LANCZOS)
+    off = (canvas - 824) // 2
+    shadow = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+    alpha = body.split()[3].point(lambda a: int(a * 0.35))
+    shadow.paste((0, 0, 0, 255), (off, off + 12), alpha)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(14))
+    icon = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+    icon.alpha_composite(shadow)
+    icon.alpha_composite(body, (off, off))
+
+    tmp = tempfile.mkdtemp()
+    iconset = os.path.join(tmp, "app.iconset")
+    os.makedirs(iconset)
+    for size in (16, 32, 128, 256, 512):
+        icon.resize((size, size), Image.LANCZOS).save(os.path.join(iconset, f"icon_{size}x{size}.png"))
+        icon.resize((size * 2, size * 2), Image.LANCZOS).save(
+            os.path.join(iconset, f"icon_{size}x{size}@2x.png"))
+    try:
+        subprocess.run(["iconutil", "--convert", "icns", "--output", path, iconset], check=True)
+        print("Сохранено:", path)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
-    make()
+    make(macos_only="--macos" in sys.argv)

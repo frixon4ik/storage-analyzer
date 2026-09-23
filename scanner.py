@@ -107,7 +107,9 @@ def _make_entry(entry: os.DirEntry, parent: str, reader=None, prior=None) -> Fil
         extension=ext,
         category="Папка" if is_dir else category_for(ext),
         size=0 if is_dir else st.st_size,
-        created=st.st_ctime,
+        # macOS/BSD: настоящая дата создания — st_birthtime (st_ctime там —
+        # время изменения метаданных); на Windows st_ctime — дата создания
+        created=getattr(st, "st_birthtime", st.st_ctime),
         modified=st.st_mtime,
         accessed=st.st_atime,
         author=author,

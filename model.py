@@ -27,6 +27,35 @@ sys.setrecursionlimit(max(sys.getrecursionlimit(), 20000))
 # Роль для хранения объекта FileEntry в элементах дерева.
 ENTRY_ROLE = Qt.UserRole + 1
 
+# Иконки файлов как в Finder/Проводнике: запрашиваются у ОС один раз на
+# расширение (а не на каждый файл) — дёшево даже для 100k+ строк.
+_icon_provider = None
+_icon_cache: dict = {}
+
+
+def entry_icon(entry):
+    global _icon_provider
+    from PySide6.QtCore import QFileInfo
+    from PySide6.QtWidgets import QFileIconProvider
+    if _icon_provider is None:
+        _icon_provider = QFileIconProvider()
+        # не лезть в сетевые/медленные тома за иконками конкретных файлов
+        _icon_provider.setOptions(QFileIconProvider.DontUseCustomDirectoryIcons)
+    if entry.is_dir:
+        key = "/dir"
+        if key not in _icon_cache:
+            _icon_cache[key] = _icon_provider.icon(QFileIconProvider.Folder)
+        return _icon_cache[key]
+    key = entry.extension
+    icon = _icon_cache.get(key)
+    if icon is None:
+        info = QFileInfo(entry.path)
+        icon = _icon_provider.icon(info) if key and info.exists() else None
+        if icon is None or icon.isNull():
+            icon = _icon_provider.icon(QFileIconProvider.File)
+        _icon_cache[key] = icon
+    return icon
+
 
 def human_size(num: int) -> str:
     """Размер в байтах -> читаемый вид (КБ, МБ, ...)."""
@@ -261,6 +290,9 @@ class FileListModel(QAbstractTableModel):
     def entry_at_row(self, row: int):
         return self._visible[row] if 0 <= row < len(self._visible) else None
 
+    def visible_entries(self) -> list[FileEntry]:
+        return self._visible
+
     def set_criteria(self, criteria: FilterCriteria) -> None:
         self.beginResetModel()
         self.criteria = criteria
@@ -297,6 +329,8 @@ class FileListModel(QAbstractTableModel):
         col = index.column()
         if role == Qt.DisplayRole:
             return cell_display(entry, col)
+        if role == Qt.DecorationRole and col == COL_NAME:
+            return entry_icon(entry)
         if role == Qt.TextAlignmentRole:
             align = Qt.AlignRight if COLUMNS[col][2] else Qt.AlignLeft
             return int(align | Qt.AlignVCenter)
@@ -882,6 +916,8 @@ class LazyFileTreeModel(QAbstractItemModel):
             if col == COL_SIZE and node.entry.is_dir:
                 return human_size(self.dir_size.get(self._dir_key(node), 0))
             return cell_display(node.entry, col)
+        if role == Qt.DecorationRole and col == COL_NAME:
+            return entry_icon(node.entry)
         if role == Qt.TextAlignmentRole:
             align = Qt.AlignRight if COLUMNS[col][2] else Qt.AlignLeft
             return int(align | Qt.AlignVCenter)

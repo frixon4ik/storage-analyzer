@@ -1,9 +1,14 @@
-"""Подключение к сетевым SMB-ресурсам с учётными данными (Windows).
+"""Подключение к сетевым SMB-ресурсам с учётными данными (Windows, macOS).
 
-Использует Win32 API WNetAddConnection2 через ctypes — это устанавливает
+Windows: Win32 API WNetAddConnection2 через ctypes — устанавливает
 аутентифицированную сессию к ресурсу `\\\\server\\share`, после чего обычный
 доступ к файлам (os.scandir и т.п.) работает прозрачно. Пароль передаётся
 в API напрямую и не попадает в командную строку или историю.
+
+macOS: системный фреймворк NetFS (NetFSMountURLSync — тот же механизм, что
+«Подключение к серверу» в Finder) монтирует ресурс в /Volumes/<share>. Пароль
+передаётся в API напрямую (не в командную строку). С паролем — без системных
+окон; без пароля macOS сама покажет окно входа (с сохранением в Связке ключей).
 
 Пароль нигде не сохраняется на диск: он живёт только в памяти на время вызова.
 """
@@ -12,8 +17,14 @@ from __future__ import annotations
 
 import ctypes
 import os
+import re
 import string
+import subprocess
+import sys
 from ctypes import wintypes
+from urllib.parse import quote, unquote
+
+_MACOS = sys.platform == "darwin"
 
 try:
     _mpr = ctypes.WinDLL("mpr", use_last_error=True)
@@ -62,7 +73,11 @@ if _AVAILABLE:
 
 
 def is_available() -> bool:
-    """Доступен ли механизм подключения (т.е. это Windows с mpr.dll)."""
+    """Доступен ли механизм подключения (Windows с mpr.dll или macOS)."""
+    return _AVAILABLE or _MACOS
+
+
+def supports_drive_letters() -> bool:
     return _AVAILABLE
 
 
@@ -87,6 +102,8 @@ def share_root(path: str) -> str | None:
 
 def free_drive_letters() -> list[str]:
     """Список свободных букв дисков (от Z к D) для возможного подключения."""
+    if not _AVAILABLE:
+        return []
     used = set()
     bitmask = ctypes.windll.kernel32.GetLogicalDrives() if _AVAILABLE else 0
     for i, letter in enumerate(string.ascii_uppercase):
@@ -108,7 +125,29 @@ def _describe(code: int) -> str:
     return f"Ошибка подключения, код {code}: {sys_msg}" if sys_msg else f"Ошибка подключения, код {code}"
 
 
-def connect(
+def connect(remote: str, username: str, password: str,
+            drive_letter: str | None = None, persistent: bool = False):
+    """Подключает SMB-ресурс. Возвращает (успех, сообщение, путь_для_сканирования)."""
+    if _MACOS:
+        return _mac_connect(remote, username, password)
+    return _win_connect(remote, username, password, drive_letter, persistent)
+
+
+def disconnect(target: str, force: bool = True) -> tuple[bool, str]:
+    """Отключает ресурс: буква диска / UNC (Windows) или точка монтирования (macOS)."""
+    if _MACOS:
+        return _mac_disconnect(target, force)
+    return _win_disconnect(target, force)
+
+
+def connection_target(remote: str, drive_letter: str | None, scan_path: str | None) -> str:
+    """Что отключать при выходе: буква диска, корень share или точка монтирования."""
+    if _MACOS:
+        return mount_point_for(remote) or (scan_path or "")
+    return drive_letter if drive_letter else (share_root(remote) or remote)
+
+
+def _win_connect(
     remote: str,
     username: str,
     password: str,
@@ -162,7 +201,7 @@ def connect(
     return True, "Подключение установлено.", scan_path
 
 
-def disconnect(remote_or_drive: str, force: bool = True) -> tuple[bool, str]:
+def _win_disconnect(remote_or_drive: str, force: bool = True) -> tuple[bool, str]:
     """Отключает ранее подключённый ресурс (по UNC-корню или букве диска)."""
     if not _AVAILABLE:
         return False, "Недоступно."
@@ -173,3 +212,184 @@ def disconnect(remote_or_drive: str, force: bool = True) -> tuple[bool, str]:
     if code == 0:
         return True, "Отключено."
     return False, _describe(code)
+
+
+# ------------------------------------------------------------------- macOS
+def parse_smb(path: str):
+    """(server, share, subpath) из smb://[user@]srv/share/sub, //srv/share, \\\\srv\\share."""
+    if not path:
+        return None
+    p = path.strip().strip('"')
+    if p.lower().startswith("smb://"):
+        p = p[6:]
+    p = p.replace("\\", "/").lstrip("/")
+    parts = [unquote(x) for x in p.split("/") if x]
+    if len(parts) < 2:
+        return None
+    server = parts[0].rsplit("@", 1)[-1]  # логин в URL не нужен — он в отдельном поле
+    return server, parts[1], "/".join(parts[2:])
+
+
+def smb_mounts() -> list[tuple[str, str, str]]:
+    """Смонтированные SMB-ресурсы: [(server, share, точка_монтирования)]."""
+    try:
+        out = subprocess.run(["mount"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    res = []
+    for ln in out.splitlines():
+        m = re.match(r"^//(?:[^@/]*@)?([^/]+)/(.+?) on (.+) \(smbfs", ln)
+        if m:
+            res.append((unquote(m.group(1)), unquote(m.group(2)), m.group(3)))
+    return res
+
+
+def mount_point_for(remote: str) -> str:
+    info = parse_smb(remote)
+    if not info:
+        return ""
+    server, share, _sub = info
+    for srv, shr, mp in smb_mounts():
+        if srv.lower() == server.lower() and shr.lower() == share.lower():
+            return mp
+    return ""
+
+
+class _NetFS:
+    """Минимальная обёртка CoreFoundation + NetFS через ctypes."""
+
+    UTF8 = 0x08000100  # kCFStringEncodingUTF8
+
+    def __init__(self) -> None:
+        cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+        nf = ctypes.CDLL("/System/Library/Frameworks/NetFS.framework/NetFS")
+        vp = ctypes.c_void_p
+        cf.CFStringCreateWithCString.argtypes = [vp, ctypes.c_char_p, ctypes.c_uint32]
+        cf.CFStringCreateWithCString.restype = vp
+        cf.CFURLCreateWithString.argtypes = [vp, vp, vp]
+        cf.CFURLCreateWithString.restype = vp
+        cf.CFDictionaryCreateMutable.argtypes = [vp, ctypes.c_long, vp, vp]
+        cf.CFDictionaryCreateMutable.restype = vp
+        cf.CFDictionarySetValue.argtypes = [vp, vp, vp]
+        cf.CFArrayGetCount.argtypes = [vp]
+        cf.CFArrayGetCount.restype = ctypes.c_long
+        cf.CFArrayGetValueAtIndex.argtypes = [vp, ctypes.c_long]
+        cf.CFArrayGetValueAtIndex.restype = vp
+        cf.CFStringGetCString.argtypes = [vp, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
+        cf.CFStringGetCString.restype = ctypes.c_bool
+        cf.CFRelease.argtypes = [vp]
+        nf.NetFSMountURLSync.argtypes = [vp, vp, vp, vp, vp, vp, ctypes.POINTER(vp)]
+        nf.NetFSMountURLSync.restype = ctypes.c_int32
+        self.cf, self.nf = cf, nf
+        self.key_cb = ctypes.c_void_p.in_dll(cf, "kCFTypeDictionaryKeyCallBacks")
+        self.val_cb = ctypes.c_void_p.in_dll(cf, "kCFTypeDictionaryValueCallBacks")
+
+    def s(self, text: str):
+        return self.cf.CFStringCreateWithCString(None, text.encode("utf-8"), self.UTF8)
+
+    def to_py(self, ref) -> str:
+        buf = ctypes.create_string_buffer(4096)
+        if ref and self.cf.CFStringGetCString(ref, buf, len(buf), self.UTF8):
+            return buf.value.decode("utf-8")
+        return ""
+
+    def mount(self, url: str, user: str, password: str, allow_ui: bool):
+        cf = self.cf
+        refs = []
+
+        def keep(r):
+            if r:
+                refs.append(r)
+            return r
+
+        try:
+            cfurl = keep(cf.CFURLCreateWithString(None, keep(self.s(url)), None))
+            opts = keep(cf.CFDictionaryCreateMutable(
+                None, 0, ctypes.addressof(self.key_cb), ctypes.addressof(self.val_cb)))
+            # kNAUIOptionKey = "UIOption": NoUI / AllowUI
+            cf.CFDictionarySetValue(opts, keep(self.s("UIOption")),
+                                    keep(self.s("AllowUI" if allow_ui else "NoUI")))
+            cf_user = keep(self.s(user)) if user else None
+            cf_pass = keep(self.s(password)) if password else None
+            points = ctypes.c_void_p()
+            code = self.nf.NetFSMountURLSync(cfurl, None, cf_user, cf_pass, opts, None,
+                                             ctypes.byref(points))
+            mp = ""
+            if points.value:
+                refs.append(points.value)
+                if cf.CFArrayGetCount(points.value) > 0:
+                    mp = self.to_py(cf.CFArrayGetValueAtIndex(points.value, 0))
+            return code, mp
+        finally:
+            for r in refs:
+                cf.CFRelease(r)
+
+
+_netfs = None
+
+
+def _mac_connect(remote, username, password):
+    global _netfs
+    info = parse_smb(remote)
+    if info is None:
+        return False, ("Неверный сетевой путь. Используйте формат smb://server/share "
+                       "или smb://server/share/папка."), None
+    server, share, sub = info
+    mp = mount_point_for(remote)  # уже подключено (например, через Finder)
+    if not mp:
+        try:
+            if _netfs is None:
+                _netfs = _NetFS()
+            url = f"smb://{quote(server)}/{quote(share)}"
+            # без пароля разрешаем системное окно входа (и Связку ключей)
+            code, mp = _netfs.mount(url, username, password, allow_ui=not password)
+        except (OSError, AttributeError, ValueError) as exc:
+            return False, f"NetFS недоступен: {exc}", None
+        if code == 17:  # EEXIST — уже смонтировано
+            mp = mount_point_for(remote)
+        elif code != 0:
+            return False, _mac_error(code), None
+        mp = mp or mount_point_for(remote)
+        if not mp:
+            return False, "Ресурс подключён, но точка монтирования не найдена.", None
+    scan_path = os.path.join(mp, sub) if sub else mp
+    return True, "Подключение установлено.", scan_path
+
+
+_MAC_ERRORS = {
+    -128: "Подключение отменено.",
+    1: "Операция не разрешена.",
+    2: "Сетевое имя (share) не найдено.",
+    13: "Отказано в доступе.",
+    60: "Сервер не ответил (тайм-аут).",
+    61: "Сервер отклонил подключение (SMB не включён?).",
+    64: "Сервер недоступен.",
+    65: "Нет маршрута до сервера.",
+    80: "Неверный логин или пароль.",
+    -5045: "Сервер не найден или недоступен.",
+    -6600: "Сервер не найден или недоступен.",
+    -6602: "Неверный логин или пароль.",
+    -6003: "Сетевое имя (share) не найдено.",
+    -5999: "Подключение отменено.",
+}
+
+
+def _mac_error(code: int) -> str:
+    hint = _MAC_ERRORS.get(code)
+    if hint is None and code > 0:
+        try:
+            hint = os.strerror(code)
+        except ValueError:
+            hint = None
+    return f"{hint or 'Не удалось подключиться.'} (код {code})"
+
+
+def _mac_disconnect(mount_point: str, force: bool = True) -> tuple[bool, str]:
+    if not mount_point or not mount_point.startswith("/Volumes/"):
+        return False, "Недоступно."
+    cmd = ["diskutil", "unmount"] + (["force"] if force else []) + [mount_point]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    return r.returncode == 0, (r.stdout or r.stderr).strip()

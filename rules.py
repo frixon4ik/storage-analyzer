@@ -199,10 +199,8 @@ class Rule:
 
 
 def default_rules_path() -> str:
-    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    folder = os.path.join(base, "FolderAnalyzer")
-    os.makedirs(folder, exist_ok=True)
-    return os.path.join(folder, "rules.json")
+    import settings
+    return os.path.join(settings.app_data_dir(), "rules.json")
 
 
 def load_rules(path: str | None = None) -> dict[str, Rule]:

@@ -16,29 +16,48 @@ import os
 import sys
 from collections import defaultdict
 
-from PySide6.QtCore import QDate, QObject, Qt, QThread, QTime, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtCore import (
+    QDate,
+    QDateTime,
+    QDir,
+    QEventLoop,
+    QObject,
+    QSettings,
+    QSize,
+    Qt,
+    QThread,
+    QTime,
+    QTimer,
+    QUrl,
+    Signal,
+)
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon, QKeySequence, QPalette
 
 
 def _icon_path() -> str:
     """Путь к иконке приложения (работает из исходников и из сборки; .ico/.png)."""
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    for name in ("app_icon.ico", "app_icon.png"):
+    names = ("app_icon.png", "app_icon.ico") if sys.platform != "win32" else ("app_icon.ico", "app_icon.png")
+    for name in names:
         p = os.path.join(base, name)
         if os.path.exists(p):
             return p
     return ""
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QCheckBox,
+    QCompleter,
     QComboBox,
     QDateEdit,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
+    QFileSystemModel,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -50,7 +69,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QRadioButton,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStackedWidget,
@@ -58,6 +77,8 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTimeEdit,
+    QToolBar,
+    QToolButton,
     QTreeView,
     QTreeWidget,
     QTreeWidgetItem,
@@ -72,11 +93,18 @@ import rules
 import s3client
 import schedule_task
 import settings as app_settings
+import ui_widgets as ui
 
 from db import FileDatabase, db_size_bytes, default_db_path
 from model import (
+    COL_AUTHOR,
+    COL_CAT,
+    COL_CREATED,
+    COL_EXT,
+    COL_KIND,
+    COL_MODIFIED,
     COL_NAME,
-    COL_PATH,
+    COL_SIZE,
     ENTRY_ROLE,
     FileListModel,
     FilterCriteria,
@@ -180,23 +208,52 @@ class _S3Worker(QObject):
             self.error.emit(s3client.err_text(exc))
 
 SIZE_UNITS = {"Б": 1, "КБ": 1024, "МБ": 1024**2, "ГБ": 1024**3, "ТБ": 1024**4}
+APP_TITLE = "Анализатор хранилищ"
+APP_VERSION = "2.0"
+MAX_RECENT = 8
+
+
+def _form() -> QFormLayout:
+    """Форма, поля которой растягиваются по ширине (на macOS по умолчанию — нет)."""
+    f = QFormLayout()
+    f.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    return f
+
+
+def _is_inside(target: str, root: str) -> bool:
+    """Лежит ли target внутри root (или совпадает с ним) — с учётом регистра ОС."""
+    if not target or not root:
+        return False
+    t = os.path.normcase(os.path.abspath(os.path.expanduser(target)))
+    r = os.path.normcase(os.path.abspath(os.path.expanduser(root)))
+    if sys.platform == "darwin":  # APFS/HFS+ по умолчанию нечувствительны к регистру
+        t, r = t.lower(), r.lower()
+    try:
+        return os.path.commonpath([t, r]) == r
+    except ValueError:  # разные диски (Windows)
+        return False
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Анализатор хранилищ — локальные диски, SMB и S3")
-        self.resize(1180, 720)
+        self.setWindowTitle(APP_TITLE)
+        self.resize(1320, 820)
+        self.setMinimumSize(900, 560)
+        self.setUnifiedTitleAndToolBarOnMac(True)
+        self.setAcceptDrops(True)
         _ip = _icon_path()
-        if _ip:
+        if _ip and sys.platform != "darwin":  # на macOS иконку даёт .app-бандл
             self.setWindowIcon(QIcon(_ip))
 
+        self.qsettings = QSettings("FolderAnalyzer", "FolderAnalyzer")
         self.controller = ScanController()
         self.s3_controller = S3ListController()
         self.mode = "file"  # "file" | "s3"
         self.s3cfg = s3client.S3Config(**app_settings.get_s3()) if app_settings.get_s3() else s3client.S3Config()
         self.db_path = app_settings.get_db_path() or default_db_path()
         self._last_info: dict = {}
+        self._scanning = False
         # ресурсы, подключённые за время сессии (для отключения при выходе)
         self._smb_connections: list[tuple[str, bool]] = []  # (адрес, persistent)
         self.model = FileListModel()  # быстрый фильтр+сортировка над списком
@@ -207,178 +264,627 @@ class MainWindow(QMainWindow):
         self._tree_built = False   # дерево строится по запросу при переключении вида
         self._tree_root = None     # для какого корня построено дерево (для переиспользования)
         self._building_tree = False
-        self._tree_builder = None
-        self._tree_total = 0
 
+        # фильтры применяются «вживую» с небольшой задержкой
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(220)
+        self._filter_timer.timeout.connect(self.apply_filters)
+
+        self._build_actions()
         self._build_ui()
+        self._build_menus()
+        self._restore_state()
+        self._update_actions()
+        self._update_summary()
+
+        # тома появляются/исчезают (флешки, SMB) — обновляем боковую панель
+        self._vol_timer = QTimer(self)
+        self._vol_timer.timeout.connect(self.sidebar.refresh_volumes)
+        self._vol_timer.start(4000)
+
+    # ------------------------------------------------------------ действия
+    def _act(self, text, slot=None, shortcut=None, icon_name=None, tip=None,
+             checkable=False) -> QAction:
+        a = QAction(text, self)
+        if icon_name:
+            a.setIcon(ui.icon(icon_name))
+        if shortcut:
+            a.setShortcut(QKeySequence(shortcut))
+        if tip:
+            a.setToolTip(tip)
+            a.setStatusTip(tip)
+        a.setCheckable(checkable)
+        if slot is not None:
+            (a.toggled if checkable else a.triggered).connect(slot)
+        return a
+
+    def _build_actions(self) -> None:
+        smb = netshare.is_available()
+        self.act_open = self._act("Открыть", self.browse_folder, QKeySequence.Open,
+                                  "FolderOpen", "Выбрать папку или диск для анализа (⌘O)")
+        self.act_smb = self._act("SMB", self.connect_smb, "Ctrl+K", "NetworkWired",
+                                 "Подключиться к сетевой папке SMB с логином и паролем (⌘K)")
+        self.act_smb.setVisible(smb)
+        self.act_s3 = self._act("S3", self.open_connect_s3, "Ctrl+Shift+K",
+                                "SyncSynchronizing", "Подключение к бакету S3 (⇧⌘K)")
+        self.act_scan = self._act("Анализ", self.start_scan, "Ctrl+R", "MediaPlaybackStart",
+                                  "Анализировать выбранную папку/бакет (⌘R)")
+        self.act_stop = self._act("Стоп", self.cancel_scan, "Ctrl+.", "ProcessStop",
+                                  "Остановить анализ (⌘.)")
+        self.act_filters = self._act("Фильтры", self._toggle_filters, "Ctrl+Alt+F",
+                                     "FormatIndentMore", "Показать/скрыть фильтры (⌥⌘F)",
+                                     checkable=True)
+        self.act_rules = self._act("Правила", self.open_rules, "Ctrl+Shift+R", "EditFind",
+                                   "Отобрать файлы по условиям и выполнить действие (⇧⌘R)")
+        self.act_dups = self._act("Дубликаты", self.open_duplicates, "Ctrl+Shift+D", "EditCopy",
+                                  "Найти дубликаты и перенести их (⇧⌘D)")
+        self.act_schedule = self._act("Расписание", self.open_schedule, "Ctrl+Shift+T",
+                                      "AppointmentSoon", "Анализ и автоархивация по расписанию (⇧⌘T)")
+        self.act_settings = self._act("Настройки…", self.open_settings, QKeySequence.Preferences,
+                                      "DocumentProperties", "База данных и уведомления Telegram")
+        self.act_settings.setMenuRole(QAction.PreferencesRole)
+        if not self.act_settings.shortcut().toString():
+            self.act_settings.setShortcut(QKeySequence("Ctrl+,"))
+        self.act_export = self._act("Экспорт списка в CSV…", self.export_visible, "Ctrl+E",
+                                    "DocumentSaveAs", "Сохранить показанные строки в CSV (⌘E)")
+        self.act_copy = self._act("Копировать путь", self._copy_selected_paths, QKeySequence.Copy)
+        self.act_find = self._act("Поиск", lambda: (self.search.setFocus(), self.search.selectAll()),
+                                  QKeySequence.Find)
+        self.act_reset = self._act("Сбросить фильтры", self.reset_filters, "Ctrl+Alt+R")
+        self.act_quicklook = self._act("Быстрый просмотр", self._quick_look, "Space")
+        self.act_quicklook.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+        self.act_reveal = self._act(f"Показать в {ui.FILE_MANAGER}", self._reveal_selected,
+                                    "Ctrl+Shift+F")
+        self.act_view_list = self._act("Список", lambda on: on and self._set_view(False),
+                                       "Ctrl+1", checkable=True)
+        self.act_view_tree = self._act("Папки (дерево)", lambda on: on and self._set_view(True),
+                                       "Ctrl+2", checkable=True)
+        self._view_group = QActionGroup(self)  # ссылка обязательна, иначе группу соберёт GC
+        self._view_group.addAction(self.act_view_list)
+        self._view_group.addAction(self.act_view_tree)
+        self._suppress_view = True   # не перестраивать вид при программном переключении
+        self.act_view_list.setChecked(True)
+        self._suppress_view = False
+        self.act_expand = self._act("Развернуть всё", lambda: self.tree.expandAll(), "Ctrl+Alt+Right")
+        self.act_collapse = self._act("Свернуть всё", lambda: self.tree.collapseAll(), "Ctrl+Alt+Left")
+        self.act_sidebar = self._act("Боковая панель", lambda on: self.sidebar.setVisible(on),
+                                     "Meta+Ctrl+S", checkable=True)
+        self.act_summary = self._act("Сводка", lambda on: self.summary.setVisible(on),
+                                     "Ctrl+Alt+S", checkable=True)
+        self.act_about = self._act(f"О программе «{APP_TITLE}»", self._about)
+        self.act_about.setMenuRole(QAction.AboutRole)
+
+    def _build_menus(self) -> None:
+        mb = self.menuBar()
+        m = mb.addMenu("Файл")
+        for a in (self.act_open, self.act_smb, self.act_s3):
+            m.addAction(a)
+        self.recent_menu = m.addMenu("Недавние папки")
+        self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
+        m.addSeparator()
+        m.addAction(self.act_scan)
+        m.addAction(self.act_stop)
+        m.addSeparator()
+        m.addAction(self.act_export)
+        m.addSeparator()
+        m.addAction(self.act_settings)
+        m.addAction(self.act_about)
+        close = self._act("Закрыть окно", self.close, QKeySequence.Close)
+        m.addAction(close)
+
+        m = mb.addMenu("Правка")
+        m.addAction(self.act_copy)
+        sel_all = self._act("Выделить всё", lambda: self._current_view().selectAll(),
+                            QKeySequence.SelectAll)
+        m.addAction(sel_all)
+        m.addSeparator()
+        m.addAction(self.act_find)
+        m.addAction(self.act_reset)
+
+        m = mb.addMenu("Вид")
+        m.addAction(self.act_view_list)
+        m.addAction(self.act_view_tree)
+        m.addSeparator()
+        m.addAction(self.act_expand)
+        m.addAction(self.act_collapse)
+        m.addSeparator()
+        m.addAction(self.act_filters)
+        m.addAction(self.act_sidebar)
+        m.addAction(self.act_summary)
+
+        m = mb.addMenu("Объект")
+        m.addAction(self._act("Открыть", lambda: self._open_entry(self._first_selected()),
+                              "Ctrl+Down"))
+        if sys.platform == "darwin":
+            # пункт меню без клавиши: пробел работает только в списке/дереве
+            m.addAction(self._act("Быстрый просмотр (пробел)", self._quick_look))
+        m.addAction(self.act_reveal)
+        m.addAction(self.act_copy)
+
+        m = mb.addMenu("Инструменты")
+        m.addAction(self.act_rules)
+        m.addAction(self.act_dups)
+        m.addAction(self.act_schedule)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QVBoxLayout(central)
-        root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(8)
+        tb = QToolBar("Панель инструментов")
+        tb.setObjectName("main_toolbar")
+        tb.setMovable(False)
+        tb.setFloatable(False)
+        tb.setIconSize(QSize(18, 18))
+        tb.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        tb.setContextMenuPolicy(Qt.PreventContextMenu)
+        self.addToolBar(tb)
+        for a in (self.act_open, self.act_smb, self.act_s3):
+            tb.addAction(a)
+        tb.addSeparator()
+        tb.addAction(self.act_scan)
+        tb.addAction(self.act_stop)
+        tb.addSeparator()
 
-        root.addWidget(self._build_source_row())
-        self.filter_box = self._build_filter_box()
-        self.filter_box.setVisible(False)  # поля фильтра скрыты, пока не нажата кнопка «Фильтры»
-        root.addWidget(self.filter_box)
+        # переключатель вида (сегменты)
+        seg = QWidget()
+        sl = QHBoxLayout(seg)
+        sl.setContentsMargins(4, 0, 4, 0)
+        sl.setSpacing(0)
+        self.seg_list = QToolButton()
+        self.seg_list.setText("Список")
+        self.seg_list.setObjectName("segL")
+        self.seg_tree = QToolButton()
+        self.seg_tree.setText("Дерево")
+        self.seg_tree.setObjectName("segR")
+        for b, act in ((self.seg_list, self.act_view_list), (self.seg_tree, self.act_view_tree)):
+            b.setCheckable(True)
+            b.setToolTip(act.text() + " (" + act.shortcut().toString(QKeySequence.NativeText) + ")")
+            b.clicked.connect(lambda _=False, a=act: a.setChecked(True))
+            act.toggled.connect(b.setChecked)
+            act.changed.connect(lambda b=b, a=act: b.setEnabled(a.isEnabled()))
+            b.setChecked(act.isChecked())
+            sl.addWidget(b)
+        seg.setStyleSheet(
+            "QToolButton { border: 1px solid palette(mid); background: palette(button);"
+            " padding: 3px 14px; margin: 0; }"
+            "QToolButton#segL { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }"
+            "QToolButton#segR { border-left: none; border-top-right-radius: 6px;"
+            " border-bottom-right-radius: 6px; }"
+            "QToolButton:checked { background: palette(highlight); color: palette(highlighted-text);"
+            " border-color: palette(highlight); }"
+            "QToolButton:disabled { color: palette(mid); }"
+        )
+        tb.addWidget(seg)
+        tb.addAction(self.act_filters)
+        tb.addSeparator()
+        for a in (self.act_rules, self.act_dups, self.act_schedule):
+            tb.addAction(a)
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._build_views())
-        splitter.addWidget(self._build_summary())
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([860, 300])
-        root.addWidget(splitter, 1)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        tb.addWidget(spacer)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Поиск по имени")
+        self.search.setClearButtonEnabled(True)
+        self.search.addAction(ui.icon("SystemSearch"), QLineEdit.LeadingPosition)
+        self.search.setFixedWidth(230)
+        self.search.setAttribute(Qt.WA_MacShowFocusRect, False)
+        self.search.textChanged.connect(lambda _t: self._filter_timer.start())
+        tb.addWidget(self.search)
+        tail = QWidget()
+        tail.setFixedWidth(10)
+        tb.addWidget(tail)
 
-        # Статусбар + прогресс
+        # --- основная область: боковая панель | содержимое | сводка
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setObjectName("main_splitter")
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(1)
+        self.setCentralWidget(self.splitter)
+
+        self.sidebar = ui.Sidebar()
+        self.sidebar.set_smb_available(netshare.is_available())
+        self.sidebar.location_chosen.connect(self._choose_location)
+        self.sidebar.s3_chosen.connect(self._choose_s3)
+        self.sidebar.s3_setup.connect(self.open_connect_s3)
+        self.sidebar.smb_connect.connect(self.connect_smb)
+        self.sidebar.recent_remove.connect(self._remove_recent)
+        self.splitter.addWidget(self.sidebar)
+
+        self.splitter.addWidget(self._build_center())
+
+        self.summary = ui.SummaryPanel()
+        self.summary.category_clicked.connect(self._on_category_clicked)
+        self.splitter.addWidget(self.summary)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(2, 0)
+        self.splitter.setSizes([210, 820, 290])
+        self.act_sidebar.setChecked(True)
+        self.act_summary.setChecked(True)
+
+        # --- строка состояния + прогресс
         self.progress = QProgressBar()
-        self.progress.setRange(0, 0)  # пока неизвестно общее число — «бегущая» полоса
+        self.progress.setRange(0, 0)
         self.progress.setVisible(False)
-        self.progress.setMinimumWidth(240)
-        self.progress.setTextVisible(True)
-        self.count_label = QLabel("Папка не выбрана")
+        self.progress.setMaximumWidth(220)
+        self.progress.setTextVisible(False)
+        self.count_label = QLabel("Выберите папку для анализа")
         self.statusBar().addWidget(self.count_label, 1)
         self.statusBar().addPermanentWidget(self.progress)
+        self.statusBar().setSizeGripEnabled(False)
 
-    def _build_source_row(self) -> QWidget:
-        box = QFrame()
-        outer = QVBoxLayout(box)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(6)
+    def _build_center(self) -> QWidget:
+        wrap = QWidget()
+        lay = QVBoxLayout(wrap)
+        lay.setContentsMargins(10, 8, 10, 4)
+        lay.setSpacing(6)
 
-        # --- строка 1: источник + путь (крупно) + основные кнопки
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Источник:"))
-        self.source_combo = QComboBox()
-        self.source_combo.addItems(["Файлы", "S3"])
-        self.source_combo.currentIndexChanged.connect(self._on_source_changed)
-        row1.addWidget(self.source_combo)
-
+        # --- строка расположения
+        loc = QHBoxLayout()
+        loc.setSpacing(6)
         self.path_label = QLabel("Папка:")
-        row1.addWidget(self.path_label)
+        loc.addWidget(self.path_label)
         self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText(r"C:\Папка  или  \\synology\share\folder")
-        self.path_edit.setMinimumHeight(28)
+        self.path_edit.setPlaceholderText(ui.PATH_HINT)
         self.path_edit.setClearButtonEnabled(True)
         self.path_edit.returnPressed.connect(self.start_scan)
-        row1.addWidget(self.path_edit, 1)
-
-        self.browse_btn = QPushButton("Обзор…")
+        self._fs_completer_model = QFileSystemModel(self)
+        self._fs_completer_model.setFilter(QDir.AllDirs | QDir.NoDotAndDotDot | QDir.Drives)
+        self._fs_completer_model.setRootPath("")
+        self._path_completer = QCompleter(self._fs_completer_model, self)
+        self._path_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.path_edit.setCompleter(self._path_completer)
+        loc.addWidget(self.path_edit, 1)
+        self.browse_btn = QPushButton("Выбрать…")
         self.browse_btn.clicked.connect(self.browse_folder)
-        row1.addWidget(self.browse_btn)
-
+        loc.addWidget(self.browse_btn)
         self.s3_btn = QPushButton("Подключение S3…")
         self.s3_btn.clicked.connect(self.open_connect_s3)
         self.s3_btn.setVisible(False)
-        row1.addWidget(self.s3_btn)
-
+        loc.addWidget(self.s3_btn)
         self.scan_btn = QPushButton("Анализировать")
         self.scan_btn.setDefault(True)
         self.scan_btn.clicked.connect(self.start_scan)
-        row1.addWidget(self.scan_btn)
+        loc.addWidget(self.scan_btn)
+        lay.addLayout(loc)
 
-        self.cancel_btn = QPushButton("Стоп")
-        self.cancel_btn.setEnabled(False)
-        self.cancel_btn.clicked.connect(self.cancel_scan)
-        row1.addWidget(self.cancel_btn)
-        outer.addLayout(row1)
-
-        # --- строка 2: параметры и второстепенные кнопки (сдвинуты вниз)
-        row2 = QHBoxLayout()
-        self.smb_btn = QPushButton("Подключить SMB…")
-        self.smb_btn.setToolTip("Подключиться к сетевому хранилищу с логином и паролем")
-        self.smb_btn.clicked.connect(self.connect_smb)
-        self.smb_btn.setVisible(netshare.is_available())  # только Windows
-        row2.addWidget(self.smb_btn)
-
+        # --- параметры анализа
+        opts = QHBoxLayout()
+        opts.setSpacing(14)
         self.recursive_cb = QCheckBox("С подпапками")
         self.recursive_cb.setChecked(True)
-        row2.addWidget(self.recursive_cb)
-
         self.dirs_cb = QCheckBox("Показывать папки")
         self.dirs_cb.setChecked(True)
-        row2.addWidget(self.dirs_cb)
-
         self.authors_cb = QCheckBox("Определять автора")
         self.authors_cb.setToolTip(
-            "Читать «Автора» файла (как в Проводнике). Если автор не задан —\n"
-            "подставляется владелец файла (учётная запись, создавшая файл).\n"
+            "Читать «Автора» файла (как в Проводнике), иначе — владельца файла.\n"
             "Замедляет сканирование, особенно на сетевых хранилищах."
+            if sys.platform == "win32" else
+            "Показывать владельца файла (учётную запись).\n"
+            "Немного замедляет сканирование, особенно на сетевых хранилищах."
         )
-        row2.addWidget(self.authors_cb)
-
-        self.incremental_cb = QCheckBox("Инкрементно (БД)")
+        self.incremental_cb = QCheckBox("Инкрементно (база)")
         self.incremental_cb.setChecked(True)
         self.incremental_cb.setToolTip(
             "Сохранять результат в базу и при повторном анализе обновлять только\n"
             "изменённые файлы (неизменённые берутся из базы — быстрее)."
         )
-        row2.addWidget(self.incremental_cb)
+        for cb in (self.recursive_cb, self.dirs_cb, self.authors_cb, self.incremental_cb):
+            f = cb.font()
+            f.setPointSizeF(max(9.0, f.pointSizeF() - 1))
+            cb.setFont(f)
+            opts.addWidget(cb)
+        opts.addStretch(1)
+        lay.addLayout(opts)
 
-        self.filter_btn = QPushButton("Фильтры ▾")
-        self.filter_btn.setCheckable(True)
-        self.filter_btn.setToolTip("Показать/скрыть поля фильтра")
-        self.filter_btn.toggled.connect(self._toggle_filters)
-        row2.addWidget(self.filter_btn)
+        self.filter_box = self._build_filter_box()
+        self.filter_box.setVisible(False)
+        lay.addWidget(self.filter_box)
 
-        row2.addStretch(1)
+        # --- заголовок результата
+        head = QHBoxLayout()
+        self.result_title = QLabel("")
+        tf = self.result_title.font()
+        tf.setPointSizeF(tf.pointSizeF() + 1)
+        tf.setBold(True)
+        self.result_title.setFont(tf)
+        self.result_title.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        head.addWidget(self.result_title, 1)
+        self.expand_btn = QPushButton("Развернуть всё")
+        self.expand_btn.clicked.connect(lambda: self.tree.expandAll())
+        self.collapse_btn = QPushButton("Свернуть всё")
+        self.collapse_btn.clicked.connect(lambda: self.tree.collapseAll())
+        for b in (self.expand_btn, self.collapse_btn):
+            b.setVisible(False)
+            head.addWidget(b)
+        lay.addLayout(head)
 
-        self.schedule_btn = QPushButton("Расписание…")
-        self.schedule_btn.setToolTip("Запускать инкрементный анализ этой папки по расписанию")
-        self.schedule_btn.clicked.connect(self.open_schedule)
-        row2.addWidget(self.schedule_btn)
+        self.stack = QStackedWidget()
+        lay.addWidget(self.stack, 1)
 
-        self.rules_btn = QPushButton("Правила…")
-        self.rules_btn.setToolTip("Отобрать файлы по условиям и выполнить действие (перенос)")
-        self.rules_btn.clicked.connect(self.open_rules)
-        row2.addWidget(self.rules_btn)
+        # --- вид «Список» (плоская таблица)
+        self.table = QTableView()
+        self.table.setModel(self.model)
+        self._setup_view(self.table)
+        self.table.setSortingEnabled(True)
+        self.table.setSelectionBehavior(QTableView.SelectRows)
+        self.table.setShowGrid(False)
+        self.table.setWordWrap(False)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(24)
+        self.table.doubleClicked.connect(self._open_selected)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setStretchLastSection(True)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setHighlightSections(False)
+        self._default_widths(self.table, 300)
+        self.stack.addWidget(self.table)
 
-        self.dup_btn = QPushButton("Дубликаты…")
-        self.dup_btn.setToolTip("Найти дубликаты по выбранным полям и перенести их")
-        self.dup_btn.clicked.connect(self.open_duplicates)
-        row2.addWidget(self.dup_btn)
+        # --- вид «Папки» (дерево)
+        self.tree = QTreeView()
+        self.tree.setModel(self.tree_model)
+        self._setup_view(self.tree)
+        self.tree.setSortingEnabled(True)
+        self.tree.setUniformRowHeights(True)
+        self.tree.doubleClicked.connect(self._tree_double_clicked)
+        self.tree.header().setSectionResizeMode(QHeaderView.Interactive)
+        self.tree.header().setStretchLastSection(True)
+        self.tree.header().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self._default_widths(self.tree, 360)
+        self.stack.addWidget(self.tree)
 
-        self.settings_btn = QPushButton("Настройки…")
-        self.settings_btn.setToolTip("Папка базы данных и уведомления Telegram")
-        self.settings_btn.clicked.connect(self.open_settings)
-        row2.addWidget(self.settings_btn)
-        outer.addLayout(row2)
+        # --- пустое состояние
+        self.empty = ui.EmptyState(netshare.is_available())
+        self.empty.open_clicked.connect(self.browse_folder)
+        self.empty.s3_clicked.connect(self.open_connect_s3)
+        self.empty.smb_clicked.connect(self.connect_smb)
+        self.stack.addWidget(self.empty)
+        self.stack.setCurrentWidget(self.empty)
+        return wrap
 
-        return box
+    @staticmethod
+    def _default_widths(view, name_width: int) -> None:
+        """Компактные колонки, чтобы «Размер» и даты были видны без прокрутки."""
+        widths = {COL_NAME: name_width, COL_KIND: 64, COL_EXT: 70, COL_CAT: 118,
+                  COL_AUTHOR: 110, COL_SIZE: 92, COL_CREATED: 152, COL_MODIFIED: 152}
+        for col, wd in widths.items():
+            view.setColumnWidth(col, wd)
+        # порядок колонок как в Finder: имя, размер, дата изменения, … (только визуально)
+        header = view.header() if isinstance(view, QTreeView) else view.horizontalHeader()
+        order = [COL_NAME, COL_SIZE, COL_MODIFIED, COL_CAT, COL_EXT, COL_KIND,
+                 COL_AUTHOR, COL_CREATED]
+        for pos, col in enumerate(order):
+            cur = header.visualIndex(col)
+            if cur != pos and cur >= 0:
+                header.moveSection(cur, pos)
 
-    def _toggle_filters(self, on: bool) -> None:
-        self.filter_box.setVisible(on)
-        self.filter_btn.setText("Фильтры ▴" if on else "Фильтры ▾")
+    def _setup_view(self, view) -> None:
+        view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        view.setAlternatingRowColors(True)
+        view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        view.setContextMenuPolicy(Qt.CustomContextMenu)
+        view.customContextMenuRequested.connect(self._show_menu)
+        view.setIconSize(QSize(16, 16))
+        view.setFrameShape(QFrame.NoFrame)
+        view.setAttribute(Qt.WA_MacShowFocusRect, False)
+        view.setTextElideMode(Qt.ElideRight)
+        view.addAction(self.act_quicklook)  # пробел — Quick Look (как в Finder)
 
-    def _on_source_changed(self) -> None:
-        self.mode = "s3" if self.source_combo.currentIndex() == 1 else "file"
-        s3 = self.mode == "s3"
+    def _build_filter_box(self) -> QWidget:
+        group = QFrame()
+        group.setObjectName("filterBox")
+        group.setStyleSheet(
+            "#filterBox { border-radius: 8px; background: palette(base);"
+            " border: 1px solid palette(midlight); }"
+        )
+        grid = QGridLayout(group)
+        grid.setContentsMargins(12, 8, 12, 8)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+
+        def lbl(t):
+            w = QLabel(t)
+            w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            return w
+
+        self.f_ext = QLineEdit()
+        self.f_ext.setPlaceholderText("jpg, png, pdf")
+        self.f_category = QComboBox()
+        self.f_category.addItem("Все")
+        self.f_kind = QComboBox()
+        self.f_kind.addItems(["Все", "Файл", "Папка"])
+        self.f_author = QLineEdit()
+        self.f_author.setPlaceholderText("содержит…")
+        grid.addWidget(lbl("Формат:"), 0, 0)
+        grid.addWidget(self.f_ext, 0, 1)
+        grid.addWidget(lbl("Категория:"), 0, 2)
+        grid.addWidget(self.f_category, 0, 3)
+        grid.addWidget(lbl("Тип:"), 0, 4)
+        grid.addWidget(self.f_kind, 0, 5)
+        grid.addWidget(lbl("Автор:"), 0, 6)
+        grid.addWidget(self.f_author, 0, 7)
+
+        size_w = QWidget()
+        sz = QHBoxLayout(size_w)
+        sz.setContentsMargins(0, 0, 0, 0)
+        self.f_min_size = QLineEdit()
+        self.f_min_size.setPlaceholderText("от")
+        self.f_max_size = QLineEdit()
+        self.f_max_size.setPlaceholderText("до")
+        self.f_size_unit = QComboBox()
+        self.f_size_unit.addItems(list(SIZE_UNITS.keys()))
+        self.f_size_unit.setCurrentText("МБ")
+        sz.addWidget(self.f_min_size)
+        sz.addWidget(QLabel("–"))
+        sz.addWidget(self.f_max_size)
+        sz.addWidget(self.f_size_unit)
+        grid.addWidget(lbl("Размер:"), 1, 0)
+        grid.addWidget(size_w, 1, 1, 1, 3)
+
+        date_w = QWidget()
+        dl = QHBoxLayout(date_w)
+        dl.setContentsMargins(0, 0, 0, 0)
+        self.f_date_on = QCheckBox("Изменён с")
+        self.f_date_from = QDateEdit()
+        self.f_date_from.setCalendarPopup(True)
+        self.f_date_from.setDisplayFormat("dd.MM.yyyy")
+        self.f_date_from.setDate(QDate.currentDate().addMonths(-1))
+        self.f_date_from.setEnabled(False)
+        self.f_date_to = QDateEdit()
+        self.f_date_to.setCalendarPopup(True)
+        self.f_date_to.setDisplayFormat("dd.MM.yyyy")
+        self.f_date_to.setDate(QDate.currentDate())
+        self.f_date_to.setEnabled(False)
+        self.f_date_on.toggled.connect(self.f_date_from.setEnabled)
+        self.f_date_on.toggled.connect(self.f_date_to.setEnabled)
+        dl.addWidget(self.f_date_on)
+        dl.addWidget(self.f_date_from)
+        dl.addWidget(QLabel("по"))
+        dl.addWidget(self.f_date_to)
+        dl.addStretch(1)
+        grid.addWidget(date_w, 1, 4, 1, 3)
+
+        reset_btn = QPushButton("Сбросить")
+        reset_btn.clicked.connect(self.reset_filters)
+        grid.addWidget(reset_btn, 1, 7, alignment=Qt.AlignRight)
+        grid.setColumnStretch(1, 2)
+        grid.setColumnStretch(7, 2)
+
+        # фильтр применяется сразу при изменении любого поля
+        kick = lambda *_: self._filter_timer.start()  # noqa: E731
+        for w in (self.f_ext, self.f_author, self.f_min_size, self.f_max_size):
+            w.textChanged.connect(kick)
+        for w in (self.f_category, self.f_kind, self.f_size_unit):
+            w.currentIndexChanged.connect(kick)
+        self.f_date_on.toggled.connect(kick)
+        self.f_date_from.dateChanged.connect(kick)
+        self.f_date_to.dateChanged.connect(kick)
+        return group
+
+    # ------------------------------------------------------ состояние окна
+    def _restore_state(self) -> None:
+        s = self.qsettings
+        geo = s.value("geometry")
+        if geo is not None:
+            self.restoreGeometry(geo)
+        spl = s.value("splitter")
+        if spl is not None:
+            self.splitter.restoreState(spl)
+        hdr = s.value("table_header_v2")
+        if hdr is not None:
+            self.table.horizontalHeader().restoreState(hdr)
+        for key, cb in (("recursive", self.recursive_cb), ("dirs", self.dirs_cb),
+                        ("authors", self.authors_cb), ("incremental", self.incremental_cb)):
+            v = s.value(f"opt/{key}")
+            if v is not None:
+                cb.setChecked(str(v).lower() in ("true", "1"))
+        side = s.value("view/sidebar")
+        if side is not None:
+            self.act_sidebar.setChecked(str(side).lower() in ("true", "1"))
+        summ = s.value("view/summary")
+        if summ is not None:
+            self.act_summary.setChecked(str(summ).lower() in ("true", "1"))
+        self.sidebar.setVisible(self.act_sidebar.isChecked())
+        self.summary.setVisible(self.act_summary.isChecked())
+        last = s.value("last_path", "")
+        if last:
+            self.path_edit.setText(str(last))
+        self.sidebar.set_recent(self._recent())
+        self._refresh_s3_sidebar()
+
+    def _save_state(self) -> None:
+        s = self.qsettings
+        s.setValue("geometry", self.saveGeometry())
+        s.setValue("splitter", self.splitter.saveState())
+        s.setValue("table_header_v2", self.table.horizontalHeader().saveState())
+        for key, cb in (("recursive", self.recursive_cb), ("dirs", self.dirs_cb),
+                        ("authors", self.authors_cb), ("incremental", self.incremental_cb)):
+            s.setValue(f"opt/{key}", cb.isChecked())
+        s.setValue("view/sidebar", self.act_sidebar.isChecked())
+        s.setValue("view/summary", self.act_summary.isChecked())
+        if self.mode == "file":
+            s.setValue("last_path", self.path_edit.text().strip())
+
+    def _recent(self) -> list[str]:
+        v = self.qsettings.value("recent", [])
+        if isinstance(v, str):
+            v = [v] if v else []
+        return [p for p in (v or []) if p]
+
+    def _add_recent(self, path: str) -> None:
+        items = [p for p in self._recent() if os.path.normcase(p) != os.path.normcase(path)]
+        items.insert(0, path)
+        self.qsettings.setValue("recent", items[:MAX_RECENT])
+        self.sidebar.set_recent(items[:MAX_RECENT])
+
+    def _remove_recent(self, path: str) -> None:
+        items = [p for p in self._recent() if p != path]
+        self.qsettings.setValue("recent", items)
+        self.sidebar.set_recent(items)
+
+    def _fill_recent_menu(self) -> None:
+        self.recent_menu.clear()
+        items = self._recent()
+        if not items:
+            a = self.recent_menu.addAction("Нет недавних")
+            a.setEnabled(False)
+            return
+        for p in items:
+            self.recent_menu.addAction(p, lambda p=p: self._choose_location(p))
+        self.recent_menu.addSeparator()
+        self.recent_menu.addAction("Очистить список", lambda: (
+            self.qsettings.setValue("recent", []), self.sidebar.set_recent([])))
+
+    # ------------------------------------------------------ источник
+    def _set_mode(self, mode: str) -> None:
+        if mode == self.mode:
+            return
+        self.mode = mode
+        s3 = mode == "s3"
         self.path_label.setText("S3:" if s3 else "Папка:")
         self.path_edit.setReadOnly(s3)
         self.path_edit.setClearButtonEnabled(not s3)
+        self.path_edit.setCompleter(None if s3 else self._path_completer)
         self.browse_btn.setVisible(not s3)
         self.s3_btn.setVisible(s3)
-        self.smb_btn.setVisible((not s3) and netshare.is_available())
         self.recursive_cb.setVisible(not s3)
         self.authors_cb.setVisible(not s3)
         self.dirs_cb.setText("Показывать папки (префиксы)" if s3 else "Показывать папки")
         if s3:
             self._refresh_s3_target()
         else:
-            self.path_edit.clear()
-            self.path_edit.setPlaceholderText(r"C:\Папка  или  \\synology\share\folder")
+            self.path_edit.setText(str(self.qsettings.value("last_path", "")))
+            self.path_edit.setPlaceholderText(ui.PATH_HINT)
+
+    def _s3_label(self) -> str:
+        if not self.s3cfg.bucket:
+            return ""
+        who = self.s3cfg.endpoint.replace("https://", "").replace("http://", "") or "AWS"
+        return f"{self.s3cfg.bucket}" + (f"/{self.s3cfg.prefix}" if self.s3cfg.prefix else "") + f"  ·  {who}"
+
+    def _refresh_s3_sidebar(self) -> None:
+        self.sidebar.set_s3(self._s3_label())
 
     def _refresh_s3_target(self) -> None:
         if self.s3cfg.bucket:
-            who = self.s3cfg.endpoint or "AWS"
-            tgt = f"{who} / {self.s3cfg.bucket}" + (f" / {self.s3cfg.prefix}" if self.s3cfg.prefix else "")
-            self.path_edit.setText(tgt)
+            self.path_edit.setText(self._s3_label())
         else:
             self.path_edit.setText("")
             self.path_edit.setPlaceholderText("нажмите «Подключение S3…»")
+
+    def _choose_location(self, path: str) -> None:
+        if self._scanning:
+            self.cancel_scan()
+        self._set_mode("file")
+        self.path_edit.setText(path)
+        self.start_scan()
+
+    def _choose_s3(self) -> None:
+        if self._scanning:
+            self.cancel_scan()
+        self._set_mode("s3")
+        self.start_scan()
 
     def open_connect_s3(self) -> None:
         if not s3client.is_available():
@@ -387,219 +893,77 @@ class MainWindow(QMainWindow):
         dlg = S3ConnectDialog(self, self.s3cfg)
         if dlg.exec() == QDialog.Accepted:
             self.s3cfg = dlg.cfg
+            self._refresh_s3_sidebar()
+            self._set_mode("s3")
             self._refresh_s3_target()
+            self.sidebar.select("s3")
+            self.start_scan()
 
-    def _build_filter_box(self) -> QWidget:
-        group = QGroupBox("Фильтры")
-        outer = QVBoxLayout(group)
-        row1 = QHBoxLayout()
-        row2 = QHBoxLayout()
-        outer.addLayout(row1)
-        outer.addLayout(row2)
+    def _toggle_filters(self, on: bool) -> None:
+        self.filter_box.setVisible(on)
+        if on:
+            self.f_ext.setFocus()
 
-        # --- строка 1: имя, формат, категория, тип
-        row1.addWidget(QLabel("Имя содержит:"))
-        self.f_name = QLineEdit()
-        self.f_name.setMaximumWidth(180)
-        row1.addWidget(self.f_name)
-
-        row1.addWidget(QLabel("Формат:"))
-        self.f_ext = QLineEdit()
-        self.f_ext.setPlaceholderText("jpg, png, pdf")
-        self.f_ext.setMaximumWidth(160)
-        row1.addWidget(self.f_ext)
-
-        row1.addWidget(QLabel("Категория:"))
-        self.f_category = QComboBox()
-        self.f_category.addItem("Все")
-        row1.addWidget(self.f_category)
-
-        row1.addWidget(QLabel("Тип:"))
-        self.f_kind = QComboBox()
-        self.f_kind.addItems(["Все", "Файл", "Папка"])
-        row1.addWidget(self.f_kind)
-
-        row1.addWidget(QLabel("Автор:"))
-        self.f_author = QLineEdit()
-        self.f_author.setPlaceholderText("содержит…")
-        self.f_author.setMaximumWidth(160)
-        row1.addWidget(self.f_author)
-        row1.addStretch(1)
-
-        # --- строка 2: размер, даты, кнопки
-        row2.addWidget(QLabel("Размер от:"))
-        self.f_min_size = QLineEdit()
-        self.f_min_size.setMaximumWidth(70)
-        self.f_min_size.setPlaceholderText("0")
-        row2.addWidget(self.f_min_size)
-        row2.addWidget(QLabel("до:"))
-        self.f_max_size = QLineEdit()
-        self.f_max_size.setMaximumWidth(70)
-        self.f_max_size.setPlaceholderText("∞")
-        row2.addWidget(self.f_max_size)
-        self.f_size_unit = QComboBox()
-        self.f_size_unit.addItems(list(SIZE_UNITS.keys()))
-        self.f_size_unit.setCurrentText("МБ")
-        row2.addWidget(self.f_size_unit)
-
-        row2.addSpacing(16)
-        self.f_date_on = QCheckBox("Изменён с:")
-        row2.addWidget(self.f_date_on)
-        self.f_date_from = QDateEdit()
-        self.f_date_from.setCalendarPopup(True)
-        self.f_date_from.setDisplayFormat("yyyy-MM-dd")
-        self.f_date_from.setDate(QDate.currentDate().addMonths(-1))
-        self.f_date_from.setEnabled(False)
-        row2.addWidget(self.f_date_from)
-        row2.addWidget(QLabel("по:"))
-        self.f_date_to = QDateEdit()
-        self.f_date_to.setCalendarPopup(True)
-        self.f_date_to.setDisplayFormat("yyyy-MM-dd")
-        self.f_date_to.setDate(QDate.currentDate())
-        self.f_date_to.setEnabled(False)
-        row2.addWidget(self.f_date_to)
-        self.f_date_on.toggled.connect(self.f_date_from.setEnabled)
-        self.f_date_on.toggled.connect(self.f_date_to.setEnabled)
-
-        row2.addStretch(1)
-        apply_btn = QPushButton("Применить")
-        apply_btn.clicked.connect(self.apply_filters)
-        row2.addWidget(apply_btn)
-        reset_btn = QPushButton("Сбросить")
-        reset_btn.clicked.connect(self.reset_filters)
-        row2.addWidget(reset_btn)
-
-        # Применять фильтр по Enter в текстовых полях
-        for w in (self.f_name, self.f_ext, self.f_author, self.f_min_size, self.f_max_size):
-            w.returnPressed.connect(self.apply_filters)
-
-        return group
-
-    def _build_views(self) -> QWidget:
-        wrap = QWidget()
-        lay = QVBoxLayout(wrap)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(4)
-
-        # переключатель вида
-        bar = QHBoxLayout()
-        bar.addWidget(QLabel("Вид:"))
-        self.view_list_rb = QRadioButton("Список")
-        self.view_tree_rb = QRadioButton("Папки (дерево)")
-        self.view_list_rb.setChecked(True)
-        self.view_list_rb.toggled.connect(self._switch_view)
-        bar.addWidget(self.view_list_rb)
-        bar.addWidget(self.view_tree_rb)
-        bar.addStretch(1)
-        self.expand_btn = QPushButton("Развернуть всё")
-        self.expand_btn.clicked.connect(lambda: self.tree.expandAll())
-        self.expand_btn.setVisible(False)
-        self.collapse_btn = QPushButton("Свернуть всё")
-        self.collapse_btn.clicked.connect(lambda: self.tree.collapseAll())
-        self.collapse_btn.setVisible(False)
-        bar.addWidget(self.expand_btn)
-        bar.addWidget(self.collapse_btn)
-        lay.addLayout(bar)
-
-        self.stack = QStackedWidget()
-        lay.addWidget(self.stack, 1)
-
-        # --- вид «Список» (плоская таблица)
-        self.table = QTableView()
-        self.table.setModel(self.model)
-        self.table.setSortingEnabled(True)
-        self.table.setSelectionBehavior(QTableView.SelectRows)
-        self.table.setSelectionMode(QTableView.ExtendedSelection)
-        self.table.setAlternatingRowColors(True)
-        self.table.setEditTriggers(QTableView.NoEditTriggers)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._show_menu)
-        self.table.doubleClicked.connect(self._open_selected)
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Interactive)
-        header.setStretchLastSection(True)
-        self.table.setColumnWidth(COL_NAME, 240)
-        self.table.setColumnWidth(COL_PATH, 260)
-        self.stack.addWidget(self.table)
-
-        # --- вид «Папки» (дерево, как в Проводнике)
-        self.tree = QTreeView()
-        self.tree.setModel(self.tree_model)
-        self.tree.setSortingEnabled(True)
-        self.tree.setSelectionMode(QTreeView.ExtendedSelection)
-        self.tree.setAlternatingRowColors(True)
-        self.tree.setEditTriggers(QTreeView.NoEditTriggers)
-        self.tree.setUniformRowHeights(True)
-        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(self._show_menu)
-        self.tree.doubleClicked.connect(self._tree_double_clicked)
-        self.tree.header().setSectionResizeMode(QHeaderView.Interactive)
-        self.tree.header().setStretchLastSection(True)
-        self.tree.setColumnWidth(COL_NAME, 320)
-        self.stack.addWidget(self.tree)
-
-        return wrap
-
-    def _switch_view(self) -> None:
-        tree_mode = self.view_tree_rb.isChecked()
+    def _set_view(self, tree_mode: bool) -> None:
+        if getattr(self, "_suppress_view", False) or not hasattr(self, "stack"):
+            return
         if tree_mode and not self._tree_built and self.model.all_count() > 0:
             # ленивое дерево: индексация мгновенная, узлы строятся при раскрытии
             self.tree_model = LazyFileTreeModel(self._last_root, self.model.all_entries())
             self.tree_model.set_criteria(self.model.criteria)
             self.tree.setModel(self.tree_model)
+            self._default_widths(self.tree, 360)
             self.tree.expandToDepth(0)
             self._tree_built = True
             self._tree_root = self._last_root
-        self.stack.setCurrentIndex(1 if tree_mode else 0)
-        self.expand_btn.setVisible(tree_mode)
-        self.collapse_btn.setVisible(tree_mode)
+        if self.model.all_count() > 0:
+            self.stack.setCurrentWidget(self.tree if tree_mode else self.table)
+        self.expand_btn.setVisible(tree_mode and self._tree_built)
+        self.collapse_btn.setVisible(tree_mode and self._tree_built)
         self._update_summary()
 
-    def _build_summary(self) -> QWidget:
-        box = QGroupBox("Сводка")
-        lay = QVBoxLayout(box)
+    def _current_view(self):
+        return self.tree if self.act_view_tree.isChecked() else self.table
 
-        self.summary_total = QLabel("—")
-        self.summary_total.setWordWrap(True)
-        self.summary_total.setTextFormat(Qt.RichText)
-        lay.addWidget(self.summary_total)
+    # --------------------------------------------------------- drag & drop
+    def dragEnterEvent(self, event):  # noqa: N802
+        md = event.mimeData()
+        if md.hasUrls() and any(u.isLocalFile() and os.path.isdir(u.toLocalFile()) for u in md.urls()):
+            event.acceptProposedAction()
 
-        lay.addWidget(QLabel("По категориям (клик — фильтр):"))
-        self.cat_table = QTableWidget(0, 3)
-        self.cat_table.setHorizontalHeaderLabels(["Категория", "Кол-во", "Размер"])
-        self.cat_table.verticalHeader().setVisible(False)
-        self.cat_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.cat_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.cat_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.cat_table.setCursor(Qt.PointingHandCursor)
-        self.cat_table.cellClicked.connect(self._on_category_clicked)
-        lay.addWidget(self.cat_table, 1)
-        return box
+    def dropEvent(self, event):  # noqa: N802
+        for u in event.mimeData().urls():
+            p = u.toLocalFile()
+            if u.isLocalFile() and os.path.isdir(p):
+                event.acceptProposedAction()
+                self._choose_location(os.path.normpath(p))
+                return
 
     # -------------------------------------------------------------- actions
     def browse_folder(self) -> None:
-        start = self.path_edit.text().strip() or os.path.expanduser("~")
-        folder = QFileDialog.getExistingDirectory(self, "Выберите папку", start)
+        start = self.path_edit.text().strip() if self.mode == "file" else ""
+        if not start or not os.path.isdir(start):
+            start = os.path.expanduser("~")
+        folder = QFileDialog.getExistingDirectory(self, "Выберите папку для анализа", start)
         if folder:
-            self.path_edit.setText(os.path.normpath(folder))
-            self.start_scan()
+            self._choose_location(os.path.normpath(folder))
 
-    def connect_smb(self) -> None:
+    def connect_smb(self, preset: str = "") -> None:
         if not netshare.is_available():
             QMessageBox.warning(
                 self, "Недоступно",
-                "Подключение по SMB с учётными данными доступно только на Windows.",
+                "Подключение по SMB с учётными данными доступно на Windows и macOS.\n"
+                "Смонтируйте ресурс средствами ОС и укажите путь монтирования.",
             )
             return
-        dlg = SmbConnectDialog(self, preset_path=self.path_edit.text().strip())
+        preset = preset if isinstance(preset, str) else ""
+        dlg = SmbConnectDialog(self, preset_path=preset or self.path_edit.text().strip())
         if dlg.exec() != QDialog.Accepted:
             return
-        scan_path = dlg.scan_path
         self._smb_connections.append((dlg.connected_target, dlg.persistent))
-        self.path_edit.setText(scan_path)
+        self.sidebar.rebuild()
         # сразу запускаем анализ подключённого ресурса
-        self.start_scan()
+        self._choose_location(dlg.scan_path)
 
     def open_schedule(self) -> None:
         if self.mode == "s3":
@@ -653,37 +1017,76 @@ class MainWindow(QMainWindow):
         # путь к базе мог измениться
         self.db_path = app_settings.get_db_path() or default_db_path()
 
+    def export_visible(self) -> None:
+        rows = self.model.visible_entries()
+        if not rows:
+            QMessageBox.information(self, "Нет данных", "Список пуст — экспортировать нечего.")
+            return
+        base = os.path.basename(self._last_root.rstrip("/\\")) or "список"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Экспорт списка", os.path.join(os.path.expanduser("~"), f"{base}.csv"),
+            "CSV (*.csv)")
+        if not path:
+            return
+        try:
+            rules.export_csv(rows, path)
+        except OSError as exc:
+            QMessageBox.critical(self, "Ошибка", str(exc))
+            return
+        self.count_label.setText(f"Экспортировано строк: {len(rows):,} → {path}".replace(",", " "))
+
+    def _about(self) -> None:
+        QMessageBox.about(
+            self, f"О программе «{APP_TITLE}»",
+            f"<h3>{APP_TITLE} {APP_VERSION}</h3>"
+            "<p>Анализ содержимого локальных дисков, сетевых папок SMB и "
+            "объектных хранилищ S3: список и дерево, фильтры, сводка, "
+            "правила, дубликаты, расписание и уведомления в Telegram.</p>"
+            f"<p>База данных: <code>{self.db_path}</code></p>",
+        )
+
     def start_scan(self) -> None:
-        if self._building_tree:
-            return  # идёт построение дерева — не перебиваем
+        if self._building_tree or self._scanning:
+            return
         import time
 
         if self.mode == "s3":
             if not self.s3cfg.bucket:
-                QMessageBox.warning(self, "Не подключено", "Сначала задайте подключение к S3.")
+                self.open_connect_s3()
                 return
             self._last_root = self.s3cfg.bucket
         else:
-            path = self.path_edit.text().strip().strip('"')
+            path = os.path.expanduser(self.path_edit.text().strip().strip('"'))
             if not path:
-                QMessageBox.warning(self, "Нет пути", "Укажите папку для анализа.")
+                self.browse_folder()
+                return
+            if path.lower().startswith("smb://") or (sys.platform != "win32" and path.startswith("//")):
+                # сетевой адрес — предлагаем подключить его
+                self.connect_smb(path)
                 return
             if not os.path.isdir(path):
                 QMessageBox.warning(
                     self, "Папка не найдена",
                     f"Путь недоступен или не является папкой:\n{path}\n\n"
-                    "Для сетевых хранилищ используйте формат \\\\server\\share\\... "
-                    "и убедитесь, что share подключён.",
+                    + ("Для сетевых хранилищ используйте формат \\\\server\\share\\... "
+                       "и убедитесь, что share подключён." if sys.platform == "win32" else
+                       "Для сетевого хранилища нажмите «SMB» (⌘K) или введите адрес "
+                       "smb://server/share."),
                 )
                 return
             self._last_root = path
+            self._add_recent(path)
+            self.qsettings.setValue("last_path", path)
+            self.sidebar.select("path", path)
 
-        self.scan_btn.setEnabled(False)
-        self.cancel_btn.setEnabled(True)
+        self._scanning = True
+        self._update_actions()
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
         self.count_label.setText("Перечисление объектов…" if self.mode == "s3" else "Сканирование…")
         self.model.set_entries([])
+        self.result_title.setText(self._root_title() + " — анализ…")
+        self.stack.setCurrentWidget(self.table)
         # дерево НЕ очищаем здесь — если по БД ничего не изменилось, переиспользуем
         # его в _on_finished (без перестроения)
         self._update_summary()
@@ -718,11 +1121,17 @@ class MainWindow(QMainWindow):
                 on_info=self._on_info,
             )
 
+    def _root_title(self) -> str:
+        if self.mode == "s3":
+            return f"S3: {self._s3_label()}"
+        return os.path.basename(self._last_root.rstrip("/\\")) or self._last_root
+
     def cancel_scan(self) -> None:
         self.controller.stop()
         self.s3_controller.stop()
         self._finish_state()
         self.count_label.setText("Остановлено.")
+        self.result_title.setText(self._root_title() + " — остановлено")
 
     def _on_phase(self, text: str) -> None:
         self.count_label.setText(text)
@@ -767,18 +1176,19 @@ class MainWindow(QMainWindow):
             self.tree_model = LazyFileTreeModel("", [])
             self.tree.setModel(self.tree_model)
             # показываем «Список» (без неявного построения дерева)
-            self.view_list_rb.blockSignals(True)
-            self.view_tree_rb.blockSignals(True)
-            self.view_list_rb.setChecked(True)
-            self.view_list_rb.blockSignals(False)
-            self.view_tree_rb.blockSignals(False)
-            self.stack.setCurrentIndex(0)
+            self._suppress_view = True
+            self.act_view_list.setChecked(True)
+            self._suppress_view = False
             self.expand_btn.setVisible(False)
             self.collapse_btn.setVisible(False)
         self._populate_categories(entries)
-        self.apply_filters()
         self._finish_state()
-        self._update_summary()
+        self.apply_filters()
+        if entries:
+            self.stack.setCurrentWidget(self.tree if self.act_view_tree.isChecked() else self.table)
+        else:
+            self.stack.setCurrentWidget(self.empty)
+            self.empty.title.setText("Папка пуста")
 
         info = self._last_info
         if info and info.get("had_prior"):
@@ -787,20 +1197,37 @@ class MainWindow(QMainWindow):
                 + f"новых/изменённых: {info['changed']:,}".replace(",", " ")
                 + f" · удалено: {info['deleted']:,} (инкрементно из базы)".replace(",", " ")
             )
-        elif info:
+        elif info and self.incremental_cb.isChecked():
             self.count_label.setText(
                 f"Готово: {info['total']:,} объектов (сохранено в базу)".replace(",", " ")
             )
+        else:
+            self.count_label.setText(f"Готово: {len(entries):,} объектов".replace(",", " "))
 
     def _on_error(self, message: str) -> None:
         self._finish_state()
         self.count_label.setText("Ошибка.")
+        self.result_title.setText(self._root_title() + " — ошибка")
         QMessageBox.critical(self, "Ошибка сканирования", message)
 
     def _finish_state(self) -> None:
-        self.scan_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
+        self._scanning = False
         self.progress.setVisible(False)
+        self._update_actions()
+
+    def _update_actions(self) -> None:
+        has = self.model.all_count() > 0
+        self.act_scan.setEnabled(not self._scanning)
+        self.scan_btn.setEnabled(not self._scanning)
+        self.act_stop.setEnabled(self._scanning)
+        for a in (self.act_rules, self.act_dups, self.act_export, self.act_view_tree,
+                  self.act_expand, self.act_collapse):
+            a.setEnabled(has and not self._scanning)
+        self.act_schedule.setEnabled(not self._scanning)
+        title = APP_TITLE
+        if self._last_root:
+            title = f"{self._root_title()} — {APP_TITLE}"
+        self.setWindowTitle(title)
 
     # -------------------------------------------------------------- filters
     def _populate_categories(self, entries) -> None:
@@ -824,16 +1251,16 @@ class MainWindow(QMainWindow):
             return None
         return int(value * SIZE_UNITS[self.f_size_unit.currentText()])
 
-    def apply_filters(self) -> None:
+    def _criteria(self) -> FilterCriteria:
         exts = {
             e.strip().lstrip(".").lower()
             for e in self.f_ext.text().replace(";", ",").split(",")
             if e.strip()
         }
         crit = FilterCriteria(
-            name_text=self.f_name.text().strip(),
+            name_text=self.search.text().strip(),
             extensions=exts,
-            category=self.f_category.currentText(),
+            category=self.f_category.currentText() or "Все",
             kind=self.f_kind.currentText(),
             author_text=self.f_author.text().strip(),
             min_size=self._parse_size(self.f_min_size.text()),
@@ -841,16 +1268,27 @@ class MainWindow(QMainWindow):
         )
         if self.f_date_on.isChecked():
             # с начала дня «от» по конец дня «по»
-            crit.modified_from = self.f_date_from.dateTime().toSecsSinceEpoch()
-            crit.modified_to = self.f_date_to.dateTime().toSecsSinceEpoch() + 86399
+            crit.modified_from = QDateTime(self.f_date_from.date(), QTime(0, 0)).toSecsSinceEpoch()
+            crit.modified_to = QDateTime(self.f_date_to.date(), QTime(0, 0)).toSecsSinceEpoch() + 86399
+        return crit
 
+    def apply_filters(self) -> None:
+        self._filter_timer.stop()
+        crit = self._criteria()
         self.model.set_criteria(crit)
         if self._tree_built:
             self.tree_model.set_criteria(crit)
+        # индикатор активного фильтра на кнопке (без учёта строки поиска)
+        panel_active = not FilterCriteria(**{**crit.__dict__, "name_text": ""}).is_empty()
+        self.act_filters.setText("Фильтры •" if panel_active else "Фильтры")
         self._update_summary()
 
     def reset_filters(self) -> None:
-        self.f_name.clear()
+        widgets = (self.search, self.f_ext, self.f_category, self.f_kind, self.f_author,
+                   self.f_min_size, self.f_max_size, self.f_date_on)
+        for w in widgets:
+            w.blockSignals(True)
+        self.search.clear()
         self.f_ext.clear()
         self.f_category.setCurrentIndex(0)
         self.f_kind.setCurrentIndex(0)
@@ -858,15 +1296,16 @@ class MainWindow(QMainWindow):
         self.f_min_size.clear()
         self.f_max_size.clear()
         self.f_date_on.setChecked(False)
-        self.model.set_criteria(FilterCriteria())
-        if self._tree_built:
-            self.tree_model.set_criteria(FilterCriteria())
-        self._update_summary()
+        self.f_date_from.setEnabled(False)
+        self.f_date_to.setEnabled(False)
+        for w in widgets:
+            w.blockSignals(False)
+        self.apply_filters()
 
     # -------------------------------------------------------------- summary
     def _update_summary(self) -> None:
         # разбивка и итоги — по всему набору (чтобы список категорий был стабилен
-        # и кликабелен); строка «Показано» отражает текущий фильтр
+        # и кликабелен); «Показано» отражает текущий фильтр
         total_size = 0
         files = 0
         dirs = 0
@@ -884,53 +1323,32 @@ class MainWindow(QMainWindow):
 
         all_rows = self.model.all_count()
         shown = self.model.rowCount()
-        self.summary_total.setText(
-            f"<b>Показано:</b> {shown:,}".replace(",", " ")
-            + f" из {all_rows:,}".replace(",", " ")
-            + f"<br><b>Файлов:</b> {files:,}".replace(",", " ")
-            + f" &nbsp; <b>Папок:</b> {dirs:,}".replace(",", " ")
-            + f"<br><b>Общий размер:</b> {human_size(total_size)}"
-        )
+        self.summary.update_data(shown, all_rows, files, dirs, total_size,
+                                 by_cat_count, by_cat_size, self.f_category.currentText())
+        if all_rows and not self._scanning:
+            sp = lambda n: f"{n:,}".replace(",", " ")  # noqa: E731
+            extra = "" if shown == all_rows else f" · показано {sp(shown)}"
+            self.result_title.setText(
+                f"{self._root_title()} — {sp(all_rows)} объектов, {human_size(total_size)}" + extra)
+        elif not self._scanning and not self._last_root:
+            self.result_title.setText("")
 
-        active_cat = self.f_category.currentText()
-        rows = sorted(by_cat_count.items(), key=lambda kv: by_cat_size[kv[0]], reverse=True)
-        self.cat_table.setRowCount(len(rows))
-        for i, (cat, cnt) in enumerate(rows):
-            name_item = QTableWidgetItem(cat)
-            if cat == active_cat:  # подсветим активную категорию
-                font = name_item.font()
-                font.setBold(True)
-                name_item.setFont(font)
-            self.cat_table.setItem(i, 0, name_item)
-            self.cat_table.setItem(i, 1, QTableWidgetItem(f"{cnt}"))
-            size_item = QTableWidgetItem(human_size(by_cat_size[cat]) if by_cat_size[cat] else "—")
-            size_item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
-            self.cat_table.setItem(i, 2, size_item)
-        self.cat_table.resizeColumnToContents(1)
-        self.cat_table.resizeColumnToContents(2)
-
-    def _on_category_clicked(self, row: int, _col: int) -> None:
-        item = self.cat_table.item(row, 0)
-        if item is None:
-            return
-        cat = item.text()
+    def _on_category_clicked(self, cat: str) -> None:
         # показываем список, чтобы были видны файлы
-        if self.view_tree_rb.isChecked():
-            self.view_list_rb.setChecked(True)
-        # тоггл: повторный клик по активной категории — сброс фильтра
-        if self.f_category.currentText() == cat:
+        if self.act_view_tree.isChecked():
+            self.act_view_list.setChecked(True)
+        # тоггл: повторный клик по активной категории (или «Сбросить») — сброс
+        if not cat or self.f_category.currentText() == cat:
             self.f_category.setCurrentIndex(0)  # «Все»
         else:
             idx = self.f_category.findText(cat)
             if idx >= 0:
                 self.f_category.setCurrentIndex(idx)
-        if not self.filter_btn.isChecked():
-            self.filter_btn.setChecked(True)  # показать активный фильтр
         self.apply_filters()
 
     # ------------------------------------------------- открытие / контекст-меню
     def _entry_at(self, view, index):
-        """FileEntry по индексу в заданном представлении (с учётом прокси)."""
+        """FileEntry по индексу в заданном представлении."""
         if not index.isValid():
             return None
         if view is self.tree:
@@ -958,8 +1376,7 @@ class MainWindow(QMainWindow):
     def _open_location(self, entry) -> None:
         if entry is None or self.mode == "s3":
             return
-        target = entry.path if entry.is_dir else entry.parent
-        QDesktopServices.openUrl(QUrl.fromLocalFile(target))
+        ui.reveal_in_file_manager(entry.path)
 
     def _open_selected(self, index) -> None:
         self._open_entry(self._entry_at(self.table, index))
@@ -970,7 +1387,7 @@ class MainWindow(QMainWindow):
             self._open_entry(entry)
 
     def _selected_entries(self):
-        view = self.tree if self.view_tree_rb.isChecked() else self.table
+        view = self._current_view()
         out = []
         sel = view.selectionModel()
         if sel is None:
@@ -983,6 +1400,40 @@ class MainWindow(QMainWindow):
             if e is not None:
                 out.append(e)
         return out
+
+    def _first_selected(self):
+        sel = self._selected_entries()
+        return sel[0] if sel else None
+
+    def _copy_selected_paths(self) -> None:
+        focus = QApplication.focusWidget()
+        if isinstance(focus, QLineEdit):  # ⌘C в поле ввода — обычное копирование
+            focus.copy()
+            return
+        ents = self._selected_entries()
+        if not ents:
+            return
+        if self.mode == "s3":
+            text = "\n".join(s3client.key_from_path(e.path, self.s3cfg.bucket) for e in ents)
+        else:
+            text = "\n".join(e.path for e in ents)
+        QApplication.clipboard().setText(text)
+        self.count_label.setText(f"Скопировано путей: {len(ents)}")
+
+    def _reveal_selected(self) -> None:
+        if self.mode == "s3":
+            return
+        e = self._first_selected()
+        if e is not None:
+            ui.reveal_in_file_manager(e.path)
+
+    def _quick_look(self) -> None:
+        if self.mode == "s3":
+            e = self._first_selected()
+            if e is not None and not e.is_dir:
+                self._open_entry(e)
+            return
+        ui.quick_look([e.path for e in self._selected_entries() if os.path.exists(e.path)])
 
     def _selected_s3_keys(self):
         return [s3client.key_from_path(e.path, self.s3cfg.bucket)
@@ -1002,16 +1453,23 @@ class MainWindow(QMainWindow):
             if n:
                 menu.addAction(f"Скачать… ({n})", self._s3_download)
                 menu.addAction(f"Переместить под префикс… ({n})", self._s3_move)
+                menu.addSeparator()
                 menu.addAction(f"Удалить… ({n})", self._s3_delete)
+                menu.addSeparator()
             menu.addAction("Копировать ключ",
                            lambda: QApplication.clipboard().setText(
                                s3client.key_from_path(entry.path, self.s3cfg.bucket)))
         else:
-            menu.addAction("Открыть папку" if entry.is_dir else "Открыть файл",
+            menu.addAction("Открыть папку" if entry.is_dir else "Открыть",
                            lambda: self._open_entry(entry))
-            menu.addAction("Открыть расположение", lambda: self._open_location(entry))
-            menu.addAction("Копировать полный путь",
-                           lambda: QApplication.clipboard().setText(entry.path))
+            if sys.platform == "darwin":
+                menu.addAction("Быстрый просмотр", self._quick_look)
+            menu.addAction(f"Показать в {ui.FILE_MANAGER}", lambda: self._open_location(entry))
+            menu.addSeparator()
+            menu.addAction("Копировать путь", self._copy_selected_paths)
+            if entry.is_dir:
+                menu.addAction("Анализировать эту папку",
+                               lambda: self._choose_location(entry.path))
         if not menu.isEmpty():
             menu.exec(view.viewport().mapToGlobal(pos))
 
@@ -1026,7 +1484,8 @@ class MainWindow(QMainWindow):
         keys = self._s3_keys_or_warn()
         if not keys:
             return
-        dest = QFileDialog.getExistingDirectory(self, "Папка для скачивания")
+        dest = QFileDialog.getExistingDirectory(self, "Папка для скачивания",
+                                                os.path.expanduser("~/Downloads"))
         if not dest:
             return
         self.setCursor(Qt.WaitCursor)
@@ -1076,11 +1535,12 @@ class MainWindow(QMainWindow):
         self.start_scan()
 
     def closeEvent(self, event):  # noqa: N802
+        self._save_state()
         self.controller.stop()
         self.s3_controller.stop()
         # отключаем временные (не «запомненные») SMB-подключения этой сессии
         for target, persistent in self._smb_connections:
-            if not persistent:
+            if not persistent and target:
                 netshare.disconnect(target, force=True)
         super().closeEvent(event)
 
@@ -1207,7 +1667,7 @@ class DuplicatesDialog(QDialog):
         al.addWidget(QLabel("Куда:"))
         self.target_edit = QLineEdit()
         self.target_edit.setPlaceholderText("префикс, напр. duplicates/" if mode == "s3"
-                                            else r"папка, напр. D:\Дубли")
+                                            else ui.TARGET_HINT.replace("Карантин", "Дубли"))
         al.addWidget(self.target_edit, 1)
         if mode != "s3":
             b = QPushButton("Обзор…")
@@ -1295,6 +1755,8 @@ class DuplicatesDialog(QDialog):
         if not self.groups:
             return
         target = self.target_edit.text().strip().strip('"')
+        if self.mode != "s3":
+            target = os.path.expanduser(target)
         if not target:
             QMessageBox.warning(self, "Куда", "Укажите папку/префикс назначения.")
             return
@@ -1302,8 +1764,7 @@ class DuplicatesDialog(QDialog):
         if not dups:
             QMessageBox.information(self, "Нет дублей", "Перемещать нечего.")
             return
-        if self.mode != "s3" and os.path.normpath(target).lower().startswith(
-                os.path.normpath(self.root).lower()):
+        if self.mode != "s3" and _is_inside(target, self.root):
             QMessageBox.warning(self, "Недопустимо",
                                 "Папка назначения не должна быть внутри анализируемой.")
             return
@@ -1345,7 +1806,7 @@ class S3ConnectDialog(QDialog):
         self.setMinimumWidth(520)
         cfg = cfg or s3client.S3Config()
         self.cfg = cfg
-        form = QFormLayout()
+        form = _form()
         self.endpoint = QLineEdit(cfg.endpoint)
         self.endpoint.setPlaceholderText("для AWS оставьте пустым; иначе https://minio:9000")
         form.addRow("Endpoint:", self.endpoint)
@@ -1440,6 +1901,7 @@ class S3RulesDialog(QDialog):
         wrap.setLayout(self._cond_area)
         layout.addWidget(wrap)
         add_btn = QPushButton("+ Добавить условие")
+        add_btn.setAutoDefault(False)
         add_btn.clicked.connect(self._add_row)
         layout.addWidget(add_btn, alignment=Qt.AlignLeft)
 
@@ -1457,6 +1919,7 @@ class S3RulesDialog(QDialog):
 
         btns = QHBoxLayout()
         find_btn = QPushButton("Найти совпадения")
+        find_btn.setDefault(True)
         find_btn.clicked.connect(self._find)
         self.run_btn = QPushButton("Выполнить")
         self.run_btn.clicked.connect(self._run)
@@ -1640,20 +2103,23 @@ class SmbConnectDialog(QDialog):
     def __init__(self, parent=None, preset_path: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle("Подключение к сетевому хранилищу (SMB)")
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(480)
+        mac = sys.platform == "darwin"
 
         self.scan_path: str = ""
         self.connected_target: str = ""
         self.persistent: bool = False
 
-        form = QFormLayout()
-
-        self.path_edit = QLineEdit(preset_path if preset_path.startswith("\\\\") else "")
-        self.path_edit.setPlaceholderText(r"\\synology\share  или  \\192.168.1.10\share\папка")
+        form = _form()
+        p = (preset_path or "").strip()
+        looks_smb = p.startswith("\\\\") or p.lower().startswith("smb://") or (mac and p.startswith("//"))
+        self.path_edit = QLineEdit(p if looks_smb else "")
+        self.path_edit.setPlaceholderText(ui.SMB_HINT)
         form.addRow("Сетевой путь:", self.path_edit)
 
         self.user_edit = QLineEdit()
-        self.user_edit.setPlaceholderText(r"имя_пользователя  (можно DOMAIN\user)")
+        self.user_edit.setPlaceholderText(
+            "имя_пользователя  (можно DOMAIN;user)" if mac else r"имя_пользователя  (можно DOMAIN\user)")
         form.addRow("Логин:", self.user_edit)
 
         self.pass_edit = QLineEdit()
@@ -1663,6 +2129,7 @@ class SmbConnectDialog(QDialog):
             lambda on: self.pass_edit.setEchoMode(QLineEdit.Normal if on else QLineEdit.Password)
         )
         pass_row = QHBoxLayout()
+        pass_row.setContentsMargins(0, 0, 0, 0)
         pass_row.addWidget(self.pass_edit, 1)
         pass_row.addWidget(show_cb)
         pass_wrap = QWidget()
@@ -1672,45 +2139,73 @@ class SmbConnectDialog(QDialog):
         self.drive_combo = QComboBox()
         self.drive_combo.addItem("(без буквы диска)")
         self.drive_combo.addItems(netshare.free_drive_letters())
-        form.addRow("Подключить как диск:", self.drive_combo)
+        if netshare.supports_drive_letters():
+            form.addRow("Подключить как диск:", self.drive_combo)
+        else:
+            self.drive_combo.setVisible(False)
 
-        self.persistent_cb = QCheckBox("Запомнить подключение (между перезагрузками Windows)")
+        self.persistent_cb = QCheckBox(
+            "Не отключать при выходе из программы" if mac else
+            "Запомнить подключение (между перезагрузками Windows)")
         form.addRow("", self.persistent_cb)
+
+        if mac:
+            note = QLabel("Пароль не сохраняется программой. Оставьте поле пустым — macOS "
+                          "спросит пароль сама и предложит сохранить его в Связке ключей. "
+                          "Ресурс монтируется в /Volumes, как через Finder (⌘K).")
+            note.setWordWrap(True)
+            note.setForegroundRole(QPalette.PlaceholderText)
+            form.addRow("", note)
 
         self.hint = QLabel("")
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color:#c0392b;")
         form.addRow("", self.hint)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Ok).setText("Подключить")
-        buttons.button(QDialogButtonBox.Cancel).setText("Отмена")
-        buttons.accepted.connect(self._try_connect)
-        buttons.rejected.connect(self.reject)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttons.button(QDialogButtonBox.Ok).setText("Подключить")
+        self.buttons.button(QDialogButtonBox.Cancel).setText("Отмена")
+        self.buttons.accepted.connect(self._try_connect)
+        self.buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
-        layout.addWidget(buttons)
+        layout.addWidget(self.buttons)
 
     def _try_connect(self) -> None:
+        import threading
+
         remote = self.path_edit.text().strip().strip('"')
-        if not remote.replace("/", "\\").startswith("\\\\"):
-            self.hint.setText("Укажите путь в формате \\\\server\\share")
+        if netshare.parse_smb(remote) is None if sys.platform == "darwin" else \
+                not remote.replace("/", "\\").startswith("\\\\"):
+            self.hint.setText("Укажите путь в формате " + ui.SMB_HINT.split("  ")[0])
             return
 
         drive = None
         if self.drive_combo.currentIndex() > 0:
             drive = self.drive_combo.currentText()
 
-        self.setCursor(Qt.WaitCursor)
-        ok, message, scan_path = netshare.connect(
-            remote=remote,
-            username=self.user_edit.text().strip(),
-            password=self.pass_edit.text(),
-            drive_letter=drive,
-            persistent=self.persistent_cb.isChecked(),
-        )
+        # подключение — в фоне, чтобы окно не «зависало» на медленной сети
+        self.hint.setStyleSheet("")
+        self.hint.setText("Подключение…")
+        self.buttons.setEnabled(False)
+        self.setCursor(Qt.BusyCursor)
+        res: dict = {}
+        args = dict(remote=remote, username=self.user_edit.text().strip(),
+                    password=self.pass_edit.text(), drive_letter=drive,
+                    persistent=self.persistent_cb.isChecked())
+        t = threading.Thread(target=lambda: res.update(r=netshare.connect(**args)), daemon=True)
+        t.start()
+        loop = QEventLoop()
+        timer = QTimer()
+        timer.timeout.connect(lambda: None if t.is_alive() else loop.quit())
+        timer.start(100)
+        loop.exec()
+        timer.stop()
         self.unsetCursor()
+        self.buttons.setEnabled(True)
+        self.hint.setStyleSheet("color:#c0392b;")
+        ok, message, scan_path = res.get("r", (False, "Нет ответа.", None))
 
         if not ok:
             self.hint.setText(message)
@@ -1718,7 +2213,7 @@ class SmbConnectDialog(QDialog):
 
         self.scan_path = scan_path
         self.persistent = self.persistent_cb.isChecked()
-        self.connected_target = drive if drive else (netshare.share_root(remote) or remote)
+        self.connected_target = netshare.connection_target(remote, drive, scan_path)
         self.accept()
 
 
@@ -1731,7 +2226,7 @@ class TelegramDialog(QDialog):
         self.setMinimumWidth(480)
         token, chat = app_settings.get_telegram()
 
-        form = QFormLayout()
+        form = _form()
         self.token_edit = QLineEdit(token)
         self.token_edit.setEchoMode(QLineEdit.Password)
         show = QCheckBox("Показать")
@@ -1802,7 +2297,7 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(580)
 
         layout = QVBoxLayout(self)
-        form = QFormLayout()
+        form = _form()
         layout.addLayout(form)
 
         current = app_settings.get_db_path() or default_db_path()
@@ -2005,7 +2500,7 @@ class ConditionRow(QWidget):
             self.text_edit.setPlaceholderText("текст, ~$* или регэксп")
             op = text = True
         elif kind == "author":
-            self.text_edit.setPlaceholderText("домен\\пользователь")
+            self.text_edit.setPlaceholderText(ui.AUTHOR_HINT)
             text = True
         # junk / empty — без параметров
         self.op_combo.setVisible(op)
@@ -2072,6 +2567,7 @@ class RulesDialog(QDialog):
         layout.addWidget(wrap)
 
         add_btn = QPushButton("+ Добавить условие")
+        add_btn.setAutoDefault(False)
         add_btn.clicked.connect(self._add_row)
         layout.addWidget(add_btn, alignment=Qt.AlignLeft)
 
@@ -2079,7 +2575,7 @@ class RulesDialog(QDialog):
         act_lay = QHBoxLayout(act_box)
         act_lay.addWidget(QLabel("Папка назначения:"))
         self.target_edit = QLineEdit()
-        self.target_edit.setPlaceholderText(r"например  D:\Карантин")
+        self.target_edit.setPlaceholderText(ui.TARGET_HINT)
         act_lay.addWidget(self.target_edit, 1)
         browse = QPushButton("Обзор…")
         browse.clicked.connect(self._browse_target)
@@ -2088,6 +2584,7 @@ class RulesDialog(QDialog):
 
         btns = QHBoxLayout()
         find_btn = QPushButton("Найти совпадения")
+        find_btn.setDefault(True)
         find_btn.clicked.connect(self._find)
         self.export_btn = QPushButton("Экспорт списка (CSV)")
         self.export_btn.clicked.connect(self._export)
@@ -2219,12 +2716,11 @@ class RulesDialog(QDialog):
     def _move(self) -> None:
         if not self.matched:
             return
-        target = self.target_edit.text().strip().strip('"')
+        target = os.path.expanduser(self.target_edit.text().strip().strip('"'))
         if not target:
             QMessageBox.warning(self, "Нет папки", "Укажите папку назначения.")
             return
-        if self.root and os.path.normpath(target).lower().startswith(
-                os.path.normpath(self.root).lower()):
+        if self.root and _is_inside(target, self.root):
             QMessageBox.warning(
                 self, "Недопустимо",
                 "Папка назначения не должна находиться внутри анализируемой папки.",
@@ -2261,7 +2757,7 @@ class RulesDialog(QDialog):
     def _schedule(self) -> None:
         name = self.name_edit.text().strip()
         conds = self._conditions()
-        target = self.target_edit.text().strip().strip('"')
+        target = os.path.expanduser(self.target_edit.text().strip().strip('"'))
         if not name:
             QMessageBox.warning(self, "Имя", "Укажите имя правила.")
             return
@@ -2277,7 +2773,7 @@ class RulesDialog(QDialog):
                 "Анализируемая папка недоступна — её путь нужен для запланированного запуска.",
             )
             return
-        if os.path.normpath(target).lower().startswith(os.path.normpath(self.root).lower()):
+        if _is_inside(target, self.root):
             QMessageBox.warning(
                 self, "Недопустимо",
                 "Папка назначения не должна находиться внутри анализируемой папки.",
@@ -2338,7 +2834,7 @@ class ScheduleDialog(QDialog):
         self.mode = mode
 
         layout = QVBoxLayout(self)
-        form = QFormLayout()
+        form = _form()
         layout.addLayout(form)
 
         self.path_edit = QLineEdit(path)
@@ -2346,7 +2842,7 @@ class ScheduleDialog(QDialog):
             self.path_edit.setReadOnly(True)
             form.addRow("Бакет S3:", self.path_edit)
         else:
-            self.path_edit.setPlaceholderText(r"C:\Папка  или  \\server\share\folder")
+            self.path_edit.setPlaceholderText(ui.PATH_HINT)
             form.addRow("Папка:", self.path_edit)
 
         default_name = ("s3_" + path) if mode == "s3" else _safe_task_name(path)
@@ -2409,8 +2905,18 @@ class ScheduleDialog(QDialog):
             "Задание будет выполняться от имени SYSTEM в фоне даже без входа "
             "пользователя. Для создания нужны права администратора."
         )
-        self.system_cb.setVisible(sys.platform == "win32")  # на Unix — cron от пользователя
+        self.system_cb.setVisible(sys.platform == "win32")  # на Unix — от пользователя
         form.addRow("", self.system_cb)
+        if sys.platform != "win32":
+            backend = QLabel(
+                "Задания выполняет launchd от вашего пользователя (пока Mac не выключен "
+                "и вы вошли в систему). Журнал — в папке данных программы, logs/."
+                if sys.platform == "darwin" else
+                "Задания выполняет cron от вашего пользователя."
+            )
+            backend.setWordWrap(True)
+            backend.setForegroundRole(QPalette.PlaceholderText)
+            form.addRow("", backend)
 
         self.hint = QLabel("")
         self.hint.setWordWrap(True)
@@ -2458,7 +2964,7 @@ class ScheduleDialog(QDialog):
         return item.text(0) if item else None
 
     def _create(self) -> None:
-        path = self.path_edit.text().strip().strip('"')
+        path = os.path.expanduser(self.path_edit.text().strip().strip('"'))
         name = self.name_edit.text().strip()
         if self.mode != "s3" and not os.path.isdir(path):
             self.hint.setText("Папка недоступна или не существует.")
@@ -2593,8 +3099,7 @@ def run_apply_cli(argv) -> int:
         print(f"Правило не найдено: {args.rule}", file=sys.stderr)
         return 2
 
-    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    log_dir = os.path.join(base, "FolderAnalyzer", "logs")
+    log_dir = os.path.join(app_settings.app_data_dir(), "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"{rule.name}.log")
 
@@ -2696,10 +3201,23 @@ def main() -> None:
             pass
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Анализатор папок")
+    app.setApplicationName("FolderAnalyzer")
+    app.setOrganizationName("FolderAnalyzer")
+    app.setApplicationDisplayName(APP_TITLE)
+    app.setApplicationVersion(APP_VERSION)
+    # русские подписи стандартных кнопок и диалогов Qt («Да/Нет», «Отмена»…)
+    from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
+    tr = QTranslator(app)
+    tr_dirs = [QLibraryInfo.path(QLibraryInfo.TranslationsPath)]
+    if getattr(sys, "_MEIPASS", None):
+        tr_dirs.insert(0, os.path.join(sys._MEIPASS, "PySide6", "Qt", "translations"))
+    for d in tr_dirs:
+        if tr.load(QLocale("ru_RU"), "qtbase", "_", d):
+            app.installTranslator(tr)
+            break
     ip = _icon_path()
-    if ip:
-        app.setWindowIcon(QIcon(ip))
+    if ip and not getattr(sys, "frozen", False) or (ip and sys.platform != "darwin"):
+        app.setWindowIcon(QIcon(ip))  # из собранного .app иконку берёт macOS
     win = MainWindow()
     win.show()
     sys.exit(app.exec())
