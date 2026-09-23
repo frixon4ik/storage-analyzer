@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="2.1"
+VERSION="2.1.1"
 VENV=".venv-build"
 # A Python installed under your home folder records that path (with your user name) in its
 # sysconfig data, and PyInstaller bundles it. uv therefore installs the build Python into a

@@ -209,7 +209,7 @@ class _S3Worker(QObject):
 
 SIZE_UNITS = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
 APP_TITLE = "Storage Analyzer"
-APP_VERSION = "2.1"
+APP_VERSION = "2.1.1"
 MAX_RECENT = 8
 
 

@@ -113,7 +113,8 @@ python app.py
 ```
 
 `boto3` is needed for S3. `pywin32` is installed on Windows only; it provides file authors, SMB
-login and Task Scheduler support there. On Windows you can also start the app from source by
+login and Task Scheduler support there. `pyobjc-framework-Quartz` is installed on macOS only; it
+powers the Quick Look panel (Space). On Windows you can also start the app from source by
 double-clicking `run.bat`.
 
 ---
@@ -308,7 +309,7 @@ Output:
 
 ```
 dist/FolderAnalyzer.app          — the application
-dist/FolderAnalyzer-2.1.dmg      — disk image with an Applications shortcut
+dist/FolderAnalyzer-2.1.1.dmg      — disk image with an Applications shortcut
 ```
 
 Build settings live in [`FolderAnalyzer-macOS.spec`](FolderAnalyzer-macOS.spec):

@@ -86,13 +86,14 @@ python app.py
 `dist/FolderAnalyzer.exe` (сборка без установки Python).
 
 На **macOS** — готовое приложение `dist/FolderAnalyzer.app` или установочный образ
-`dist/FolderAnalyzer-2.1.dmg` (перетащите приложение в «Программы»), см.
+`dist/FolderAnalyzer-2.1.1.dmg` (перетащите приложение в «Программы»), см.
 [сборку](#сборка-портативной-версии). Системный `/usr/bin/python3` на macOS —
 3.9, для запуска из исходников поставьте Python 3.10+ (python.org, Homebrew или
 `uv venv --python 3.12`).
 
 `boto3` нужен для S3; `pywin32` ставится только на Windows (помечен маркером в
-`requirements.txt`) и даёт чтение автора, SMB-подключение и расписание.
+`requirements.txt`) и даёт чтение автора, SMB-подключение и расписание. `pyobjc-framework-Quartz`
+ставится только на macOS и даёт панель быстрого просмотра (Quick Look, пробел).
 
 ---
 
@@ -275,7 +276,7 @@ bash build_linux.sh      # -> dist/FolderAnalyzer (портативный бин
 ```bash
 ./build_macos.sh
 # -> dist/FolderAnalyzer.app       — приложение
-# -> dist/FolderAnalyzer-2.1.dmg   — установочный образ (перетащить в «Программы»)
+# -> dist/FolderAnalyzer-2.1.1.dmg   — установочный образ (перетащить в «Программы»)
 ```
 Спецификация — `FolderAnalyzer-macOS.spec` (onedir-бандл, `Info.plist` с
 русскими текстами запросов доступа, поддержка тёмной темы, minimum macOS 12).

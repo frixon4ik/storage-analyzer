@@ -107,10 +107,59 @@ def reveal_in_file_manager(path: str) -> None:
         pass
 
 
+_ql_source = None  # источник данных панели Quick Look (ссылка держит объект живым)
+
+
+def _quick_look_panel(paths: list[str]) -> bool:
+    """Системная панель Quick Look в процессе программы (как пробел в Finder).
+
+    Возвращает False, если PyObjC недоступен. Повторный вызов при открытой
+    панели закрывает её."""
+    global _ql_source
+    try:
+        import objc
+        from Foundation import NSObject, NSURL
+        from Quartz import QLPreviewPanel
+    except ImportError:
+        return False
+
+    if _ql_source is None:
+        class _QLSource(NSObject):
+            urls = objc.ivar()
+
+            def numberOfPreviewItemsInPreviewPanel_(self, panel):
+                return len(self.urls or [])
+
+            def previewPanel_previewItemAtIndex_(self, panel, index):
+                return self.urls[index]
+
+        _ql_source = _QLSource.alloc().init()
+
+    panel = QLPreviewPanel.sharedPreviewPanel()
+    if panel.isVisible():
+        panel.orderOut_(None)
+        return True
+    _ql_source.urls = [NSURL.fileURLWithPath_(p) for p in paths]
+    panel.setDataSource_(_ql_source)
+    panel.reloadData()
+    panel.setCurrentPreviewItemIndex_(0)
+    panel.makeKeyAndOrderFront_(None)
+    return True
+
+
 def quick_look(paths: list[str]) -> None:
-    """Быстрый просмотр (Quick Look) — только macOS."""
+    """Быстрый просмотр (Quick Look) — только macOS.
+
+    Основной путь — панель QLPreviewPanel внутри программы. Утилита qlmanage —
+    отладочная и на macOS 26 падает на видеофайлах, поэтому она только запасной
+    вариант, когда PyObjC не установлен."""
     if not MACOS or not paths:
         return
+    try:
+        if _quick_look_panel(paths[:200]):
+            return
+    except Exception:  # noqa: BLE001 — сбой панели не должен ронять программу
+        pass
     try:
         subprocess.Popen(["qlmanage", "-p", *paths[:20]],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

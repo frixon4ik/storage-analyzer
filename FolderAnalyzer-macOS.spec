@@ -7,7 +7,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 APP_NAME = "Storage Analyzer"
 BUNDLE_ID = "com.folderanalyzer.app"
-VERSION = "2.1"
+VERSION = "2.1.1"
 # Architecture: None — same as the current Python (arm64 on Apple Silicon);
 # "universal2" — only with a universal Python build and universal dependencies.
 TARGET_ARCH = os.environ.get("TARGET_ARCH") or None
