@@ -9,12 +9,17 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 VERSION="2.1"
-VENV=".venv"
+VENV=".venv-build"
+# A Python installed under your home folder records that path (with your user name) in its
+# sysconfig data, and PyInstaller bundles it. uv therefore installs the build Python into a
+# shared location that contains no user name.
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-/Users/Shared/uv-python}"
 
 # --- environment: Python 3.10+ is required (the system /usr/bin/python3 on macOS is 3.9)
 if [ ! -x "$VENV/bin/python" ]; then
   if command -v uv >/dev/null 2>&1; then
-    uv venv --python 3.12 "$VENV"
+    uv python install 3.12
+    uv venv --python 3.12 --python-preference only-managed "$VENV"
   else
     PY=""
     for c in python3.13 python3.12 python3.11 python3.10 python3; do
@@ -45,6 +50,41 @@ rm -rf build/FolderAnalyzer-macOS dist/FolderAnalyzer dist/FolderAnalyzer.app
 
 APP="dist/FolderAnalyzer.app"
 codesign --verify --deep --strict "$APP" && echo "App signature is valid."
+
+# --- privacy check: the bundle must not contain your home folder path
+if "$VENV/bin/python" - "$APP/Contents/MacOS/FolderAnalyzer" "$HOME" <<'PY'
+import marshal, sys, tempfile, types
+from PyInstaller.archive.readers import CArchiveReader, ZlibArchiveReader
+exe, home = sys.argv[1], sys.argv[2]
+tmp = tempfile.NamedTemporaryFile(suffix=".pyz", delete=False).name
+arch = CArchiveReader(exe)
+open(tmp, "wb").write(arch.extract("PYZ.pyz"))
+pyz = ZlibArchiveReader(tmp)
+def walk(co):
+    yield co
+    for c in co.co_consts:
+        if isinstance(c, types.CodeType):
+            yield from walk(c)
+hits = set()
+for name in pyz.toc:
+    try:
+        co = pyz.extract(name)
+        co = marshal.loads(co) if isinstance(co, (bytes, bytearray)) else co
+    except Exception:
+        continue
+    if isinstance(co, types.CodeType):
+        for c in walk(co):
+            if home in c.co_filename or any(isinstance(k, str) and home in k for k in c.co_consts):
+                hits.add(name)
+if hits:
+    print("modules with your home path:", sorted(hits))
+    sys.exit(1)
+PY
+then
+  echo "Privacy check passed: no home folder paths in the bundle."
+else
+  echo "WARNING: the bundle contains your home folder path (see above)." >&2
+fi
 
 # --- disk image (drag the app into Applications)
 DMG="dist/FolderAnalyzer-$VERSION.dmg"
