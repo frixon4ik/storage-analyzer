@@ -24,22 +24,22 @@ def _register(category: str, extensions: str) -> None:
         CATEGORY_MAP[ext] = category
 
 
-_register("Изображения", "jpg jpeg png gif bmp tiff tif webp heic heif svg ico raw cr2 nef arw dng psd")
-_register("Видео", "mp4 mkv avi mov wmv flv webm m4v mpg mpeg 3gp ts m2ts vob mxf")
-_register("Аудио", "mp3 wav flac aac ogg wma m4a aiff alac opus mid")
-_register("Документы", "pdf doc docx xls xlsx ppt pptx odt ods odp rtf txt md csv epub pages numbers key")
-_register("Архивы", "zip rar 7z tar gz bz2 xz iso dmg cab z lz lzma tgz")
-_register("Код", "py js ts jsx tsx java c cpp h hpp cs go rs rb php swift kt sql sh bat ps1 html css json xml yaml yml toml ini")
-_register("Исполняемые", "exe msi dll bat cmd com app deb rpm apk")
-_register("Шрифты", "ttf otf woff woff2 eot")
+_register("Images", "jpg jpeg png gif bmp tiff tif webp heic heif svg ico raw cr2 nef arw dng psd")
+_register("Video", "mp4 mkv avi mov wmv flv webm m4v mpg mpeg 3gp ts m2ts vob mxf")
+_register("Audio", "mp3 wav flac aac ogg wma m4a aiff alac opus mid")
+_register("Documents", "pdf doc docx xls xlsx ppt pptx odt ods odp rtf txt md csv epub pages numbers key")
+_register("Archives", "zip rar 7z tar gz bz2 xz iso dmg cab z lz lzma tgz")
+_register("Code", "py js ts jsx tsx java c cpp h hpp cs go rs rb php swift kt sql sh bat ps1 html css json xml yaml yml toml ini")
+_register("Executables", "exe msi dll bat cmd com app deb rpm apk")
+_register("Fonts", "ttf otf woff woff2 eot")
 _register("3D / CAD", "obj stl fbx step stp dwg dxf blend 3ds")
 
 
 def category_for(extension: str) -> str:
     """Возвращает категорию по расширению (без точки, в нижнем регистре)."""
     if not extension:
-        return "Без расширения"
-    return CATEGORY_MAP.get(extension.lower(), "Прочее")
+        return "No extension"
+    return CATEGORY_MAP.get(extension.lower(), "Other")
 
 
 @dataclass(slots=True)
@@ -72,7 +72,7 @@ class FileEntry:
 
     @property
     def kind(self) -> str:
-        return "Папка" if self.is_dir else "Файл"
+        return "Folder" if self.is_dir else "File"
 
 
 def _ext_of(name: str) -> str:
@@ -105,7 +105,7 @@ def _make_entry(entry: os.DirEntry, parent: str, reader=None, prior=None) -> Fil
         parent=parent,
         is_dir=is_dir,
         extension=ext,
-        category="Папка" if is_dir else category_for(ext),
+        category="Folder" if is_dir else category_for(ext),
         size=0 if is_dir else st.st_size,
         # macOS/BSD: настоящая дата создания — st_birthtime (st_ctime там —
         # время изменения метаданных); на Windows st_ctime — дата создания
@@ -206,7 +206,7 @@ def _fill_authors_parallel(entries, cancel=None, on_phase=None, on_total=None,
     from concurrent.futures import ThreadPoolExecutor
 
     if on_phase:
-        on_phase("Чтение автора/владельца…")
+        on_phase("Reading authors/owners…")
     total = len(entries)
     if on_total:
         on_total(total)
@@ -242,7 +242,7 @@ def run_scan(root, recursive=True, include_dirs=True, read_authors=False,
     а при incremental из базы берётся предыдущий снимок для ускорения.
     """
     if not os.path.isdir(root):
-        raise NotADirectoryError(f"Путь не является папкой или недоступен: {root}")
+        raise NotADirectoryError(f"The path is not a folder or is not available: {root}")
 
     db = None
     prior: dict = {}
@@ -261,7 +261,7 @@ def run_scan(root, recursive=True, include_dirs=True, read_authors=False,
     if on_total:
         on_total(total)
     if on_phase:
-        on_phase("Анализ…")
+        on_phase("Analyzing…")
 
     # обход без чтения автора (быстро); у неизменённых автор берётся из базы
     results = scan_tree(root, recursive, include_dirs, None, prior,
@@ -330,7 +330,7 @@ class ScanWorker(QObject):
                 self.info.emit(info)
             self.finished.emit(results)
         except Exception as exc:  # noqa: BLE001 — отдаём любую ошибку в UI
-            self.error.emit(f"Ошибка при сканировании:\n{exc}")
+            self.error.emit(f"Scan error:\n{exc}")
 
 
 class ScanController:

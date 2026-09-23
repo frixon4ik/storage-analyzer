@@ -38,22 +38,22 @@ from model import human_size
 MACOS = sys.platform == "darwin"
 WINDOWS = sys.platform == "win32"
 
-FILE_MANAGER = "Finder" if MACOS else ("Проводнике" if WINDOWS else "файловом менеджере")
+FILE_MANAGER = "Finder" if MACOS else ("Explorer" if WINDOWS else "File Manager")
 
 if WINDOWS:
-    PATH_HINT = r"C:\Папка  или  \\server\share\folder"
-    TARGET_HINT = r"например  D:\Карантин"
-    AUTHOR_HINT = "домен\\пользователь"
-    SMB_HINT = r"\\synology\share  или  \\192.168.1.10\share\папка"
+    PATH_HINT = r"C:\Folder  or  \\server\share\folder"
+    TARGET_HINT = r"e.g.  D:\Quarantine"
+    AUTHOR_HINT = "DOMAIN\\user"
+    SMB_HINT = r"\\synology\share  or  \\192.168.1.10\share\folder"
 elif MACOS:
-    PATH_HINT = "/Users/имя/Папка  или  /Volumes/share  (можно перетащить папку в окно)"
-    TARGET_HINT = "например  ~/Карантин"
-    AUTHOR_HINT = "имя пользователя"
-    SMB_HINT = "smb://nas.local/share  или  smb://192.168.1.10/share/папка"
+    PATH_HINT = "/Users/name/Folder  or  /Volumes/share  (you can drop a folder onto the window)"
+    TARGET_HINT = "e.g.  ~/Quarantine"
+    AUTHOR_HINT = "user name"
+    SMB_HINT = "smb://nas.local/share  or  smb://192.168.1.10/share/folder"
 else:
-    PATH_HINT = "/home/имя/Папка  или  /mnt/share"
-    TARGET_HINT = "например  ~/Карантин"
-    AUTHOR_HINT = "имя пользователя"
+    PATH_HINT = "/home/name/Folder  or  /mnt/share"
+    TARGET_HINT = "e.g.  ~/Quarantine"
+    AUTHOR_HINT = "user name"
     SMB_HINT = "smb://server/share"
 
 
@@ -237,11 +237,11 @@ class Sidebar(QTreeWidget):
         self.clear()
         home = os.path.expanduser("~")
 
-        fav = self._section("Избранное")
-        places = [("Домашняя папка", home)]
-        for label, sub in (("Рабочий стол", "Desktop"), ("Документы", "Documents"),
-                           ("Загрузки", "Downloads"), ("Изображения", "Pictures"),
-                           ("Видео", "Movies" if MACOS else "Videos"), ("Музыка", "Music")):
+        fav = self._section("Favorites")
+        places = [("Home", home)]
+        for label, sub in (("Desktop", "Desktop"), ("Documents", "Documents"),
+                           ("Downloads", "Downloads"), ("Pictures", "Pictures"),
+                           ("Movies" if MACOS else "Videos", "Movies" if MACOS else "Videos"), ("Music", "Music")):
             p = os.path.join(home, sub)
             if os.path.isdir(p):
                 places.append((label, p))
@@ -250,24 +250,24 @@ class Sidebar(QTreeWidget):
 
         vols = _volumes()
         self._vol_sig = tuple(vols)
-        loc = self._section("Расположения")
+        loc = self._section("Locations")
         for name, root, network in vols:
             ic = icon("NetworkWired") if network else self._dir_icon(root)
             self._item(loc, name, ic, "path", root)
         if self._smb:
-            self._item(loc, "Подключиться к серверу…", icon("NetworkWired"), "smb",
-                       tip="Подключить сетевую папку SMB с логином и паролем")
+            self._item(loc, "Connect to Server…", icon("NetworkWired"), "smb",
+                       tip="Connect an SMB network share with a user name and password")
 
-        cloud = self._section("Облако S3")
+        cloud = self._section("S3 Cloud")
         if self._s3_label:
             self._item(cloud, self._s3_label, icon("SyncSynchronizing"), "s3",
-                       tip="Анализ сохранённого бакета S3")
-        self._item(cloud, "Настроить S3…" if not self._s3_label else "Другой бакет…",
+                       tip="Analyze the saved S3 bucket")
+        self._item(cloud, "Set Up S3…" if not self._s3_label else "Another Bucket…",
                    icon("DocumentProperties"), "s3-setup",
-                   tip="AWS S3 или совместимое хранилище (MinIO, Ceph, Wasabi, B2)")
+                   tip="AWS S3 or compatible storage (MinIO, Ceph, Wasabi, B2)")
 
         if self._recent:
-            rec = self._section("Недавние")
+            rec = self._section("Recent")
             for p in self._recent:
                 name = os.path.basename(p.rstrip("/\\")) or p
                 self._item(rec, name, self._dir_icon(p), "path", p)
@@ -311,28 +311,28 @@ class Sidebar(QTreeWidget):
             return
         path = item.data(0, VALUE_ROLE)
         menu = QMenu(self)
-        menu.addAction("Анализировать", lambda: self.location_chosen.emit(path))
-        menu.addAction(f"Показать в {FILE_MANAGER}", lambda: reveal_in_file_manager(path))
-        if item.parent() is not None and item.parent().text(0) == "НЕДАВНИЕ":
+        menu.addAction("Analyze", lambda: self.location_chosen.emit(path))
+        menu.addAction(f"Show in {FILE_MANAGER}", lambda: reveal_in_file_manager(path))
+        if item.parent() is not None and item.parent().text(0) == "RECENT":
             menu.addSeparator()
-            menu.addAction("Убрать из недавних", lambda: self.recent_remove.emit(path))
+            menu.addAction("Remove from Recent", lambda: self.recent_remove.emit(path))
         menu.exec(self.viewport().mapToGlobal(pos))
 
 
 # ----------------------------------------------------------- сводка
 CATEGORY_COLORS = {
-    "Видео": "#e5484d",
-    "Изображения": "#f76b15",
-    "Аудио": "#d6409f",
-    "Документы": "#0090ff",
-    "Архивы": "#ffb224",
-    "Код": "#30a46c",
-    "Исполняемые": "#8e4ec6",
-    "Шрифты": "#12a594",
+    "Video": "#e5484d",
+    "Images": "#f76b15",
+    "Audio": "#d6409f",
+    "Documents": "#0090ff",
+    "Archives": "#ffb224",
+    "Code": "#30a46c",
+    "Executables": "#8e4ec6",
+    "Fonts": "#12a594",
     "3D / CAD": "#a18072",
-    "Прочее": "#8b8d98",
-    "Без расширения": "#b0b4ba",
-    "Папка": "#5b9bd5",
+    "Other": "#8b8d98",
+    "No extension": "#b0b4ba",
+    "Folder": "#5b9bd5",
 }
 SHARE_ROLE = Qt.UserRole + 20
 CAT_ROLE = Qt.UserRole + 21
@@ -417,7 +417,7 @@ class SummaryPanel(QWidget):
         lay.setContentsMargins(10, 10, 10, 10)
         lay.setSpacing(8)
 
-        head = QLabel("Сводка")
+        head = QLabel("Summary")
         hf = head.font()
         hf.setPointSizeF(hf.pointSizeF() + 2)
         hf.setBold(True)
@@ -426,10 +426,10 @@ class SummaryPanel(QWidget):
 
         grid = QGridLayout()
         grid.setSpacing(6)
-        self.card_size = _StatCard("общий размер")
-        self.card_files = _StatCard("файлов")
-        self.card_dirs = _StatCard("папок")
-        self.card_shown = _StatCard("показано")
+        self.card_size = _StatCard("total size")
+        self.card_files = _StatCard("files")
+        self.card_dirs = _StatCard("folders")
+        self.card_shown = _StatCard("shown")
         grid.addWidget(self.card_size, 0, 0, 1, 2)
         grid.addWidget(self.card_files, 1, 0)
         grid.addWidget(self.card_dirs, 1, 1)
@@ -437,13 +437,13 @@ class SummaryPanel(QWidget):
         lay.addLayout(grid)
 
         cat_head = QHBoxLayout()
-        lbl = QLabel("По категориям")
+        lbl = QLabel("By category")
         lf = lbl.font()
         lf.setBold(True)
         lbl.setFont(lf)
         cat_head.addWidget(lbl)
         cat_head.addStretch(1)
-        self.reset_btn = QPushButton("Сбросить")
+        self.reset_btn = QPushButton("Reset")
         self.reset_btn.setFlat(True)
         self.reset_btn.setCursor(Qt.PointingHandCursor)
         self.reset_btn.setVisible(False)
@@ -451,7 +451,7 @@ class SummaryPanel(QWidget):
         cat_head.addWidget(self.reset_btn)
         lay.addLayout(cat_head)
 
-        hint = QLabel("Клик по категории — фильтр списка")
+        hint = QLabel("Click a category to filter the list")
         hint.setForegroundRole(QPalette.PlaceholderText)
         hf2 = hint.font()
         hf2.setPointSizeF(max(8.0, hf2.pointSizeF() - 1))
@@ -460,7 +460,7 @@ class SummaryPanel(QWidget):
 
         self.cats = QTreeWidget()
         self.cats.setColumnCount(3)
-        self.cats.setHeaderLabels(["Категория", "Кол-во", "Размер"])
+        self.cats.setHeaderLabels(["Category", "Count", "Size"])
         self.cats.setRootIsDecorated(False)
         self.cats.setUniformRowHeights(True)
         self.cats.setFrameShape(QFrame.NoFrame)
@@ -483,12 +483,12 @@ class SummaryPanel(QWidget):
 
     def update_data(self, shown: int, total: int, files: int, dirs: int, size: int,
                     by_count: dict, by_size: dict, active: str) -> None:
-        sp = lambda n: f"{n:,}".replace(",", " ")  # noqa: E731
+        sp = lambda n: f"{n:,}"  # noqa: E731
         self.card_size.value.setText(human_size(size) if size else "—")
         self.card_files.value.setText(sp(files))
         self.card_dirs.value.setText(sp(dirs))
-        self.card_shown.value.setText(f"{sp(shown)} из {sp(total)}" if total else "—")
-        self.reset_btn.setVisible(active not in ("", "Все"))
+        self.card_shown.value.setText(f"{sp(shown)} of {sp(total)}" if total else "—")
+        self.reset_btn.setVisible(active not in ("", "All"))
 
         total_size = sum(by_size.values()) or 1
         rows = sorted(by_count, key=lambda c: (by_size.get(c, 0), by_count[c]), reverse=True)
@@ -524,7 +524,7 @@ class EmptyState(QWidget):
         ic.setPixmap(icon("FolderOpen").pixmap(56, 56))
         ic.setAlignment(Qt.AlignCenter)
         lay.addWidget(ic)
-        self.title = QLabel("Выберите, что проанализировать")
+        self.title = QLabel("Choose what to analyze")
         tf = self.title.font()
         tf.setPointSizeF(tf.pointSizeF() + 6)
         tf.setWeight(QFont.DemiBold)
@@ -533,8 +533,8 @@ class EmptyState(QWidget):
         lay.addWidget(self.title)
         key = "⌘" if MACOS else "Ctrl+"
         self.sub = QLabel(
-            "Выберите папку или диск в боковой панели, перетащите папку в это окно\n"
-            f"или нажмите {key}O. Для сетевых хранилищ — SMB, для облака — S3."
+            "Pick a folder or drive in the sidebar, drop a folder onto this window\n"
+            f"or press {key}O. Use SMB for network shares and S3 for cloud storage."
         )
         self.sub.setAlignment(Qt.AlignCenter)
         self.sub.setForegroundRole(QPalette.PlaceholderText)
@@ -542,15 +542,15 @@ class EmptyState(QWidget):
         lay.addSpacing(10)
         row = QHBoxLayout()
         row.addStretch(1)
-        b1 = QPushButton(icon("FolderOpen"), "Выбрать папку…")
+        b1 = QPushButton(icon("FolderOpen"), "Choose Folder…")
         b1.setDefault(True)
         b1.clicked.connect(self.open_clicked)
         row.addWidget(b1)
         if smb_available:
-            b2 = QPushButton(icon("NetworkWired"), "Подключить SMB…")
+            b2 = QPushButton(icon("NetworkWired"), "Connect SMB…")
             b2.clicked.connect(self.smb_clicked)
             row.addWidget(b2)
-        b3 = QPushButton(icon("SyncSynchronizing"), "Подключить S3…")
+        b3 = QPushButton(icon("SyncSynchronizing"), "Connect S3…")
         b3.clicked.connect(self.s3_clicked)
         row.addWidget(b3)
         row.addStretch(1)

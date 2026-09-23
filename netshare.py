@@ -38,14 +38,14 @@ CONNECT_UPDATE_PROFILE = 0x00000001  # «запомнить» подключен
 
 # Понятные пояснения к частым кодам ошибок WNet.
 _ERROR_HINTS = {
-    5: "Отказано в доступе.",
-    53: "Сетевой путь не найден. Проверьте имя сервера и доступность хранилища.",
-    66: "Тип сетевого ресурса не поддерживается.",
-    67: "Сетевое имя (share) не найдено. Проверьте имя общей папки.",
-    86: "Неверный пароль.",
-    1219: "Уже есть подключение к этому серверу под другими учётными данными.",
-    1326: "Неверный логин или пароль.",
-    2202: "Указано неверное имя пользователя.",
+    5: "Access denied.",
+    53: "Network path not found. Check the server name and that the storage is reachable.",
+    66: "This type of network resource is not supported.",
+    67: "Network name (share) not found. Check the shared folder name.",
+    86: "Wrong password.",
+    1219: "There is already a connection to this server with different credentials.",
+    1326: "Wrong user name or password.",
+    2202: "Invalid user name.",
 }
 
 
@@ -119,10 +119,10 @@ def _describe(code: int) -> str:
     except Exception:  # noqa: BLE001
         sys_msg = ""
     if hint and sys_msg:
-        return f"{hint} (код {code}: {sys_msg})"
+        return f"{hint} (code {code}: {sys_msg})"
     if hint:
-        return f"{hint} (код {code})"
-    return f"Ошибка подключения, код {code}: {sys_msg}" if sys_msg else f"Ошибка подключения, код {code}"
+        return f"{hint} (code {code})"
+    return f"Connection error, code {code}: {sys_msg}" if sys_msg else f"Connection error, code {code}"
 
 
 def connect(remote: str, username: str, password: str,
@@ -164,13 +164,13 @@ def _win_connect(
     Путь для сканирования = буква диска (если задана) либо исходный UNC-путь.
     """
     if not _AVAILABLE:
-        return False, "Подключение по SMB доступно только на Windows.", None
+        return False, "SMB connections are only available on Windows.", None
 
     root = share_root(remote)
     if root is None:
         return False, (
-            "Неверный сетевой путь. Используйте формат \\\\server\\share или "
-            "\\\\server\\share\\папка."
+            "Invalid network path. Use the \\\\server\\share or "
+            "\\\\server\\share\\folder format."
         ), None
 
     local = drive_letter.rstrip("\\") if drive_letter else None
@@ -198,19 +198,19 @@ def _win_connect(
     else:
         # сохраняем исходный путь пользователя (может указывать на подпапку)
         scan_path = remote.replace("/", "\\")
-    return True, "Подключение установлено.", scan_path
+    return True, "Connected.", scan_path
 
 
 def _win_disconnect(remote_or_drive: str, force: bool = True) -> tuple[bool, str]:
     """Отключает ранее подключённый ресурс (по UNC-корню или букве диска)."""
     if not _AVAILABLE:
-        return False, "Недоступно."
+        return False, "Not available."
     target = remote_or_drive
     if not target.endswith(":") and target.startswith("\\\\"):
         target = share_root(target) or target
     code = _cancel(target, 0, force)
     if code == 0:
-        return True, "Отключено."
+        return True, "Disconnected."
     return False, _describe(code)
 
 
@@ -332,8 +332,8 @@ def _mac_connect(remote, username, password):
     global _netfs
     info = parse_smb(remote)
     if info is None:
-        return False, ("Неверный сетевой путь. Используйте формат smb://server/share "
-                       "или smb://server/share/папка."), None
+        return False, ("Invalid network path. Use the smb://server/share "
+                       "or smb://server/share/folder format."), None
     server, share, sub = info
     mp = mount_point_for(remote)  # уже подключено (например, через Finder)
     if not mp:
@@ -344,33 +344,33 @@ def _mac_connect(remote, username, password):
             # без пароля разрешаем системное окно входа (и Связку ключей)
             code, mp = _netfs.mount(url, username, password, allow_ui=not password)
         except (OSError, AttributeError, ValueError) as exc:
-            return False, f"NetFS недоступен: {exc}", None
+            return False, f"NetFS is not available: {exc}", None
         if code == 17:  # EEXIST — уже смонтировано
             mp = mount_point_for(remote)
         elif code != 0:
             return False, _mac_error(code), None
         mp = mp or mount_point_for(remote)
         if not mp:
-            return False, "Ресурс подключён, но точка монтирования не найдена.", None
+            return False, "The share is connected, but its mount point was not found.", None
     scan_path = os.path.join(mp, sub) if sub else mp
-    return True, "Подключение установлено.", scan_path
+    return True, "Connected.", scan_path
 
 
 _MAC_ERRORS = {
-    -128: "Подключение отменено.",
-    1: "Операция не разрешена.",
-    2: "Сетевое имя (share) не найдено.",
-    13: "Отказано в доступе.",
-    60: "Сервер не ответил (тайм-аут).",
-    61: "Сервер отклонил подключение (SMB не включён?).",
-    64: "Сервер недоступен.",
-    65: "Нет маршрута до сервера.",
-    80: "Неверный логин или пароль.",
-    -5045: "Сервер не найден или недоступен.",
-    -6600: "Сервер не найден или недоступен.",
-    -6602: "Неверный логин или пароль.",
-    -6003: "Сетевое имя (share) не найдено.",
-    -5999: "Подключение отменено.",
+    -128: "Connection cancelled.",
+    1: "Operation not permitted.",
+    2: "Network name (share) not found.",
+    13: "Access denied.",
+    60: "The server did not respond (timeout).",
+    61: "The server refused the connection (is SMB enabled?).",
+    64: "The server is unreachable.",
+    65: "No route to the server.",
+    80: "Wrong user name or password.",
+    -5045: "Server not found or unreachable.",
+    -6600: "Server not found or unreachable.",
+    -6602: "Wrong user name or password.",
+    -6003: "Network name (share) not found.",
+    -5999: "Connection cancelled.",
 }
 
 
@@ -381,12 +381,12 @@ def _mac_error(code: int) -> str:
             hint = os.strerror(code)
         except ValueError:
             hint = None
-    return f"{hint or 'Не удалось подключиться.'} (код {code})"
+    return f"{hint or 'Could not connect.'} (code {code})"
 
 
 def _mac_disconnect(mount_point: str, force: bool = True) -> tuple[bool, str]:
     if not mount_point or not mount_point.startswith("/Volumes/"):
-        return False, "Недоступно."
+        return False, "Not available."
     cmd = ["diskutil", "unmount"] + (["force"] if force else []) + [mount_point]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)

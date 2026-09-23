@@ -178,8 +178,8 @@ def _create_with_launcher(task_name, cmdline, kind, time_str, interval,
         cmd += ["/RU", "SYSTEM", "/RL", "HIGHEST"]
     ok, msg = _run(cmd)
     if not ok and run_as_system and ("denied" in msg.lower() or "отказан" in msg.lower()):
-        msg += ("\n\nДля задания от SYSTEM запустите программу от имени "
-                "администратора (правый клик → «Запуск от имени администратора»).")
+        msg += ("\n\nTo create a SYSTEM task, run the app as an "
+                "administrator (right-click → “Run as administrator”).")
     return ok, msg
 
 
@@ -197,7 +197,7 @@ def _run(cmd: list[str]) -> tuple[bool, str]:
     try:
         res = subprocess.run(cmd, capture_output=True, **kw)
     except FileNotFoundError:
-        return False, f"Команда не найдена: {cmd[0]}"
+        return False, f"Command not found: {cmd[0]}"
     text = _decode(res.stdout) + _decode(res.stderr)
     return res.returncode == 0, text.strip()
 
@@ -229,19 +229,19 @@ def _write_crontab(text: str) -> tuple[bool, str]:
     try:
         r = subprocess.run(["crontab", "-"], input=text, capture_output=True, text=True)
     except FileNotFoundError:
-        return False, "crontab не найден"
+        return False, "crontab not found"
     return r.returncode == 0, (r.stderr or "").strip()
 
 
 def _cron_create(name, cmdline, kind, time_str, interval) -> tuple[bool, str]:
     cur = _read_crontab()
     if cur is None:
-        return False, "Планировщик cron недоступен."
+        return False, "The cron scheduler is not available."
     marker = CRON_MARKER + name
     lines = [ln for ln in cur.splitlines() if marker not in ln]
     lines.append(f"{_cron_expr(kind, time_str, interval)} {cmdline} {marker}")
     ok, err = _write_crontab("\n".join(lines).strip() + "\n")
-    return ok, ("Создано (cron)." if ok else err or "Ошибка crontab")
+    return ok, ("Created (cron)." if ok else err or "crontab error")
 
 
 # ------------------------------------------------------------ launchd (macOS)
@@ -299,10 +299,10 @@ def _launchd_describe(kind, time_str, interval) -> str:
     hh, mm = _hm(time_str)
     n = max(1, int(interval))
     if kind == "MINUTE":
-        return f"каждые {n} мин"
+        return f"every {n} min"
     if kind == "HOURLY":
-        return f"каждые {n} ч с {hh:02d}:{mm:02d}"
-    return f"ежедневно в {hh:02d}:{mm:02d}"
+        return f"every {n} h from {hh:02d}:{mm:02d}"
+    return f"daily at {hh:02d}:{mm:02d}"
 
 
 def _launchd_create(name, args, kind, time_str, interval) -> tuple[bool, str]:
@@ -328,13 +328,13 @@ def _launchd_create(name, args, kind, time_str, interval) -> tuple[bool, str]:
         with open(path, "wb") as f:
             plistlib.dump(plist, f)
     except OSError as exc:
-        return False, f"Не удалось записать {path}: {exc}"
+        return False, f"Could not write {path}: {exc}"
     ok, msg = _run(["launchctl", "bootstrap", _domain(), path])
     if not ok:
         # старые версии macOS: legacy-команда
         ok, msg2 = _run(["launchctl", "load", "-w", path])
         msg = msg2 or msg
-    return ok, ("Создано (launchd)." if ok else msg or "Ошибка launchctl")
+    return ok, ("Created (launchd)." if ok else msg or "launchctl error")
 
 
 def _launchd_tasks() -> list[dict]:
@@ -358,7 +358,7 @@ def _launchd_tasks() -> list[dict]:
         tasks.append({
             "name": name,
             "next_run": pl.get("FolderAnalyzerSchedule", "launchd"),
-            "status": "активно" if loaded else "не загружено",
+            "status": "active" if loaded else "not loaded",
         })
     return tasks
 
@@ -372,12 +372,12 @@ def _launchd_delete(name) -> tuple[bool, str]:
             os.remove(path)
     except OSError as exc:
         return False, str(exc)
-    return True, "Удалено."
+    return True, "Deleted."
 
 
 def _launchd_run_now(name) -> tuple[bool, str]:
     ok, msg = _run(["launchctl", "kickstart", f"{_domain()}/{_label(name)}"])
-    return ok, ("Запущено." if ok else msg or "Задание не загружено.")
+    return ok, ("Started." if ok else msg or "The task is not loaded.")
 
 
 def create_task(name, path, kind="DAILY", time_str="03:00", interval=1,
@@ -452,11 +452,11 @@ def delete_task(name: str) -> tuple[bool, str]:
     if not _WINDOWS:
         cur = _read_crontab()
         if cur is None:
-            return False, "cron недоступен."
+            return False, "cron is not available."
         marker = CRON_MARKER + name
         lines = [ln for ln in cur.splitlines() if marker not in ln]
         ok, err = _write_crontab("\n".join(lines).strip() + "\n")
-        return ok, ("Удалено." if ok else err)
+        return ok, ("Deleted." if ok else err)
     ok, msg = _run(["schtasks", "/Delete", "/F", "/TN", f"{TASK_FOLDER}\\{name}"])
     try:
         launcher = _launcher_path(name)
@@ -478,11 +478,11 @@ def run_task_now(name: str) -> tuple[bool, str]:
                 parts = ln.split(None, 5)
                 body = parts[5].split(CRON_MARKER)[0].strip() if len(parts) > 5 else ""
                 if not body:
-                    return False, "Пустая команда."
+                    return False, "Empty command."
                 try:
                     subprocess.Popen(shlex.split(body))
-                    return True, "Запущено."
+                    return True, "Started."
                 except Exception as exc:  # noqa: BLE001
                     return False, str(exc)
-        return False, "Задание не найдено."
+        return False, "Task not found."
     return _run(["schtasks", "/Run", "/TN", f"{TASK_FOLDER}\\{name}"])

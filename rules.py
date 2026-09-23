@@ -18,19 +18,19 @@ from datetime import datetime
 
 # Типы условий: (подпись, ключ)
 CONDITION_TYPES = [
-    ("Возраст", "age"),
-    ("Размер", "size"),
-    ("Формат", "ext"),
-    ("Категория", "category"),
-    ("Имя", "name"),
-    ("Автор / владелец", "author"),
-    ("Мусорные файлы", "junk"),
-    ("Пустые (0 байт)", "empty"),
+    ("Age", "age"),
+    ("Size", "size"),
+    ("Format", "ext"),
+    ("Category", "category"),
+    ("Name", "name"),
+    ("Author / owner", "author"),
+    ("Junk files", "junk"),
+    ("Empty (0 bytes)", "empty"),
 ]
 
-AGE_UNITS = {"дней": 86400, "месяцев": 86400 * 30, "лет": 86400 * 365}
-SIZE_UNITS = {"Б": 1, "КБ": 1024, "МБ": 1024 ** 2, "ГБ": 1024 ** 3, "ТБ": 1024 ** 4}
-AGE_DATE_FIELDS = [("по изменению", "modified"), ("по созданию", "created"), ("по доступу", "accessed")]
+AGE_UNITS = {"days": 86400, "months": 86400 * 30, "years": 86400 * 365}
+SIZE_UNITS = {"B": 1, "KB": 1024, "MB": 1024 ** 2, "GB": 1024 ** 3, "TB": 1024 ** 4}
+AGE_DATE_FIELDS = [("by modification", "modified"), ("by creation", "created"), ("by access", "accessed")]
 
 _JUNK_EXACT = {"thumbs.db", ".ds_store", "desktop.ini"}
 _JUNK_GLOBS = ("~$*", "*.tmp", "*.temp", "*.bak", "*.~*")
@@ -48,24 +48,24 @@ class Condition:
     def describe(self) -> str:
         if self.kind == "age":
             field = dict((v, k) for k, v in AGE_DATE_FIELDS).get(self.date_field, self.date_field)
-            word = "старше" if self.op == "older" else "младше"
-            return f"Возраст {word} {self.number:g} {self.unit} ({field})"
+            word = "older than" if self.op == "older" else "newer than"
+            return f"Age {word} {self.number:g} {self.unit} ({field})"
         if self.kind == "size":
-            word = "больше" if self.op == "gt" else "меньше"
-            return f"Размер {word} {self.number:g} {self.unit}"
+            word = "larger than" if self.op == "gt" else "smaller than"
+            return f"Size {word} {self.number:g} {self.unit}"
         if self.kind == "ext":
-            return f"Формат: {self.text}"
+            return f"Format: {self.text}"
         if self.kind == "category":
-            return f"Категория: {self.text}"
+            return f"Category: {self.text}"
         if self.kind == "name":
-            word = {"contains": "содержит", "wildcard": "маска", "regex": "регэксп"}.get(self.op, self.op)
-            return f"Имя {word}: {self.text}"
+            word = {"contains": "contains", "wildcard": "wildcard", "regex": "regex"}.get(self.op, self.op)
+            return f"Name {word}: {self.text}"
         if self.kind == "author":
-            return f"Автор/владелец содержит: {self.text}"
+            return f"Author/owner contains: {self.text}"
         if self.kind == "junk":
-            return "Мусорные файлы (Thumbs.db, ~$*, *.tmp, …)"
+            return "Junk files (Thumbs.db, ~$*, *.tmp, …)"
         if self.kind == "empty":
-            return "Пустые файлы (0 байт)"
+            return "Empty files (0 bytes)"
         return self.kind
 
 
@@ -160,6 +160,26 @@ def execute_move(entries, root: str, target_dir: str):
     return moved, freed, errors
 
 
+# Правила, сохранённые версиями с русским интерфейсом: единицы и категории
+# хранились по-русски — переводим, чтобы «6 месяцев» не стали «6 днями».
+_LEGACY_UNITS = {
+    "дней": "days", "месяцев": "months", "лет": "years",
+    "Б": "B", "КБ": "KB", "МБ": "MB", "ГБ": "GB", "ТБ": "TB",
+}
+_LEGACY_CATEGORIES = {
+    "Изображения": "Images", "Видео": "Video", "Аудио": "Audio", "Документы": "Documents",
+    "Архивы": "Archives", "Код": "Code", "Исполняемые": "Executables", "Шрифты": "Fonts",
+    "Прочее": "Other", "Без расширения": "No extension", "Папка": "Folder",
+}
+
+
+def _upgrade_condition(c: Condition) -> Condition:
+    c.unit = _LEGACY_UNITS.get(c.unit, c.unit)
+    if c.kind == "category":
+        c.text = _LEGACY_CATEGORIES.get(c.text, c.text)
+    return c
+
+
 # --------------------------------------------------------- сохранение правил
 @dataclass
 class Rule:
@@ -187,7 +207,7 @@ class Rule:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Rule":
-        conds = [Condition(**c) for c in d.get("conditions", [])]
+        conds = [_upgrade_condition(Condition(**c)) for c in d.get("conditions", [])]
         return cls(
             name=d["name"], root=d.get("root", ""), conditions=conds,
             target=d.get("target", ""), action=d.get("action", "move"),
@@ -253,26 +273,26 @@ def apply_rule(rule: Rule, now: float, on_log=None) -> dict:
         try:
             entries = s3client.list_entries(cfg)
         except Exception as exc:  # noqa: BLE001
-            log(f"Ошибка S3: {s3client.err_text(exc)}")
+            log(f"S3 error: {s3client.err_text(exc)}")
             result["errors"].append(s3client.err_text(exc))
             return result
         matched = evaluate(entries, rule.conditions, now, include_dirs=False)
         result["matched"] = len(matched)
-        log(f"Совпало объектов: {len(matched)}")
+        log(f"Matched objects: {len(matched)}")
         keys = [s3client.key_from_path(e.path, cfg.bucket) for e in matched]
         if not keys:
             return result
         if rule.action == "move":
             if not rule.target:
-                log("Не задан целевой префикс — действие пропущено.")
+                log("No target prefix — action skipped.")
                 return result
             moved, _f, errors = s3client.move_to_prefix(cfg, keys, rule.target)
             result.update(moved=moved, errors=errors)
-            log(f"Перемещено: {moved}, ошибок: {len(errors)}")
+            log(f"Moved: {moved}, errors: {len(errors)}")
         else:  # delete
             deleted, errors = s3client.delete_keys(cfg, keys)
             result.update(moved=deleted, errors=errors)
-            log(f"Удалено: {deleted}, ошибок: {len(errors)}")
+            log(f"Deleted: {deleted}, errors: {len(errors)}")
         return result
 
     from scanner import run_scan  # импорт здесь — модуль rules не тянет Qt без нужды
@@ -283,15 +303,15 @@ def apply_rule(rule: Rule, now: float, on_log=None) -> dict:
     )
     matched = evaluate(results, rule.conditions, now, include_dirs=False)
     result["matched"] = len(matched)
-    log(f"Совпало файлов: {len(matched)}")
+    log(f"Matched files: {len(matched)}")
 
     if rule.action == "move":
         if not rule.target:
-            log("Не задана папка назначения — действие пропущено.")
+            log("No destination folder — action skipped.")
             return result
         moved, freed, errors = execute_move(matched, rule.root, rule.target)
         result.update(moved=moved, freed=freed, errors=errors)
-        log(f"Перемещено: {moved}, освобождено: {freed} байт, ошибок: {len(errors)}")
+        log(f"Moved: {moved}, freed: {freed} bytes, errors: {len(errors)}")
     return result
 
 
@@ -306,8 +326,8 @@ def export_csv(entries, path: str) -> None:
 
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f, delimiter=";")
-        w.writerow(["Имя", "Тип", "Формат", "Категория", "Автор",
-                    "Размер (байт)", "Создан", "Изменён", "Путь"])
+        w.writerow(["Name", "Type", "Format", "Category", "Author",
+                    "Size (bytes)", "Created", "Modified", "Path"])
         for e in entries:
             w.writerow([e.name, e.kind, e.extension, e.category, e.author,
                         e.size, dt(e.created), dt(e.modified), e.path])

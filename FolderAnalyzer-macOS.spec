@@ -1,15 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Сборка macOS: .app-бандл (onedir — рекомендуемый для macOS режим PyInstaller).
-# Запуск:  ./build_macos.sh   (или: pyinstaller --noconfirm FolderAnalyzer-macOS.spec)
+# macOS build: .app bundle (onedir, the mode PyInstaller recommends for macOS).
+# Run:  ./build_macos.sh   (or: pyinstaller --noconfirm FolderAnalyzer-macOS.spec)
 import os
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
-APP_NAME = "Анализатор хранилищ"
+APP_NAME = "Storage Analyzer"
 BUNDLE_ID = "com.folderanalyzer.app"
-VERSION = "2.0"
-# Архитектура: None — как у текущего Python (arm64 на Apple Silicon);
-# "universal2" — только с universal-сборкой Python и зависимостей.
+VERSION = "2.1"
+# Architecture: None — same as the current Python (arm64 on Apple Silicon);
+# "universal2" — only with a universal Python build and universal dependencies.
 TARGET_ARCH = os.environ.get("TARGET_ARCH") or None
 
 datas = [("app_icon.png", ".")]
@@ -26,7 +26,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # Windows-модули и ненужные части Qt/Python — не тянем в бандл
+    # Windows-only modules and unused parts of Qt/Python stay out of the bundle
     excludes=[
         "win32com", "pythoncom", "pywintypes", "win32security",
         "tkinter", "unittest", "pydoc_data",
@@ -76,23 +76,23 @@ app = BUNDLE(
         "CFBundleDisplayName": APP_NAME,
         "CFBundleShortVersionString": VERSION,
         "CFBundleVersion": VERSION,
-        "CFBundleDevelopmentRegion": "ru",
-        "CFBundleLocalizations": ["ru"],
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleLocalizations": ["en"],
         "LSMinimumSystemVersion": "12.0",
         "LSApplicationCategoryType": "public.app-category.utilities",
         "NSHighResolutionCapable": True,
-        "NSRequiresAquaSystemAppearance": False,  # поддержка тёмной темы
-        "NSHumanReadableCopyright": "Анализатор хранилищ: диски, SMB и S3",
-        # тексты системных запросов доступа (TCC) при анализе защищённых папок
+        "NSRequiresAquaSystemAppearance": False,  # dark mode support
+        "NSHumanReadableCopyright": "Storage Analyzer: local disks, SMB shares and S3",
+        # texts of the system (TCC) access prompts shown when analyzing protected folders
         "NSDesktopFolderUsageDescription":
-            "Нужен доступ, чтобы проанализировать содержимое папки «Рабочий стол».",
+            "Access is needed to analyze the contents of your Desktop folder.",
         "NSDocumentsFolderUsageDescription":
-            "Нужен доступ, чтобы проанализировать содержимое папки «Документы».",
+            "Access is needed to analyze the contents of your Documents folder.",
         "NSDownloadsFolderUsageDescription":
-            "Нужен доступ, чтобы проанализировать содержимое папки «Загрузки».",
+            "Access is needed to analyze the contents of your Downloads folder.",
         "NSRemovableVolumesUsageDescription":
-            "Нужен доступ, чтобы проанализировать содержимое внешних дисков.",
+            "Access is needed to analyze the contents of external drives.",
         "NSNetworkVolumesUsageDescription":
-            "Нужен доступ, чтобы проанализировать содержимое сетевых папок (SMB).",
+            "Access is needed to analyze the contents of network shares (SMB).",
     },
 )

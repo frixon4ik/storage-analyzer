@@ -10,7 +10,6 @@ an archive" — once or on a schedule, with Telegram alerts when a folder grows 
 Built with **Python + PySide6 (Qt)**. Runs on **macOS**, **Windows** and **Linux**.
 
 > 🇷🇺 Русская версия описания: [README.ru.md](README.ru.md).
-> The app's interface is in Russian.
 
 ![Storage Analyzer — list view](docs/screenshots/list.png)
 
@@ -71,6 +70,8 @@ Built with **Python + PySide6 (Qt)**. Runs on **macOS**, **Windows** and **Linux
 - **Scheduling** — background analysis and auto-archiving by rule, using the native scheduler:
   Task Scheduler on Windows, `launchd` on macOS, `cron` on Linux.
 - **Telegram notifications** when a folder or bucket exceeds a size threshold.
+- **English interface** on every platform. Rules saved by older versions with the Russian
+  interface keep working: their units and categories are converted when loaded.
 - **Native look on macOS** — menu bar and ⌘ shortcuts, unified toolbar, SF Symbols and Finder
   icons, light and dark mode, and the app remembers the window layout and settings.
 
@@ -307,7 +308,7 @@ Output:
 
 ```
 dist/FolderAnalyzer.app          — the application
-dist/FolderAnalyzer-2.0.dmg      — disk image with an Applications shortcut
+dist/FolderAnalyzer-2.1.dmg      — disk image with an Applications shortcut
 ```
 
 Build settings live in [`FolderAnalyzer-macOS.spec`](FolderAnalyzer-macOS.spec):

@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Сборка для macOS: dist/FolderAnalyzer.app + установочный образ dist/FolderAnalyzer-<версия>.dmg
-# Запускать НА macOS (PyInstaller собирает только под текущую ОС и архитектуру).
+# macOS build: dist/FolderAnalyzer.app + disk image dist/FolderAnalyzer-<version>.dmg
+# Run ON macOS (PyInstaller builds only for the current OS and CPU architecture).
 #
-#   ./build_macos.sh                         # обычная сборка (ad-hoc подпись)
-#   CODESIGN_IDENTITY="Developer ID Application: …" ./build_macos.sh   # подпись сертификатом
-#   TARGET_ARCH=universal2 ./build_macos.sh  # только с universal-сборкой Python
+#   ./build_macos.sh                         # regular build (ad-hoc signature)
+#   CODESIGN_IDENTITY="Developer ID Application: …" ./build_macos.sh   # sign with a certificate
+#   TARGET_ARCH=universal2 ./build_macos.sh  # only with a universal Python build
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="2.0"
+VERSION="2.1"
 VENV=".venv"
 
-# --- окружение: нужен Python 3.10+ (системный /usr/bin/python3 на macOS — 3.9)
+# --- environment: Python 3.10+ is required (the system /usr/bin/python3 on macOS is 3.9)
 if [ ! -x "$VENV/bin/python" ]; then
   if command -v uv >/dev/null 2>&1; then
     uv venv --python 3.12 "$VENV"
@@ -23,7 +23,7 @@ if [ ! -x "$VENV/bin/python" ]; then
       fi
     done
     if [ -z "$PY" ]; then
-      echo "Нужен Python 3.10+ (python.org, Homebrew: brew install python, или uv)." >&2
+      echo "Python 3.10+ is required (python.org, Homebrew: brew install python, or uv)." >&2
       exit 1
     fi
     "$PY" -m venv "$VENV"
@@ -36,29 +36,29 @@ else
   "$VENV/bin/python" -m pip install -r requirements.txt pyinstaller pillow
 fi
 
-# --- иконка по сетке macOS
+# --- icon on the macOS grid
 "$VENV/bin/python" make_icon.py --macos
 
-# --- сборка .app
+# --- build the .app
 rm -rf build/FolderAnalyzer-macOS dist/FolderAnalyzer dist/FolderAnalyzer.app
 "$VENV/bin/python" -m PyInstaller --noconfirm --clean FolderAnalyzer-macOS.spec
 
 APP="dist/FolderAnalyzer.app"
-codesign --verify --deep --strict "$APP" && echo "Подпись .app корректна."
+codesign --verify --deep --strict "$APP" && echo "App signature is valid."
 
-# --- установочный образ .dmg (перетащить в «Программы»)
+# --- disk image (drag the app into Applications)
 DMG="dist/FolderAnalyzer-$VERSION.dmg"
 STAGE="$(mktemp -d)"
 cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Программы"
+ln -s /Applications "$STAGE/Applications"
 rm -f "$DMG"
-hdiutil create -volname "Анализатор хранилищ" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
-rm -rf "$STAGE"
+hdiutil create -volname "Storage Analyzer" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null 2>&1
+rm -rf "$STAGE" build dist/FolderAnalyzer
 
 echo
-echo "Готово:"
-echo "  $APP  — приложение (перетащите в «Программы»)"
-echo "  $DMG  — установочный образ"
+echo "Done:"
+echo "  $APP  — the application (drag it into Applications)"
+echo "  $DMG  — disk image"
 echo
-echo "Первый запуск неподписанной сборки: ПКМ по приложению → «Открыть»,"
-echo "или: xattr -dr com.apple.quarantine /Applications/FolderAnalyzer.app"
+echo "First launch of an unsigned build: right-click the app → Open,"
+echo "or run: xattr -dr com.apple.quarantine /Applications/FolderAnalyzer.app"

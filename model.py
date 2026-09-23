@@ -61,15 +61,15 @@ def human_size(num: int) -> str:
     """Размер в байтах -> читаемый вид (КБ, МБ, ...)."""
     if num <= 0:
         return "—" if num == 0 else str(num)
-    units = ["Б", "КБ", "МБ", "ГБ", "ТБ", "ПБ"]
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
     value = float(num)
     for unit in units:
         if value < 1024 or unit == units[-1]:
-            if unit == "Б":
+            if unit == "B":
                 return f"{int(value)} {unit}"
             return f"{value:.1f} {unit}"
         value /= 1024
-    return f"{num} Б"
+    return f"{num} B"
 
 
 def fmt_dt(ts: float) -> str:
@@ -83,15 +83,15 @@ def fmt_dt(ts: float) -> str:
 
 # (заголовок, ключ-атрибут, выравнивание-справа?)
 COLUMNS = [
-    ("Имя", "name", False),
-    ("Тип", "kind", False),
-    ("Формат", "extension", False),
-    ("Категория", "category", False),
-    ("Автор", "author", False),
-    ("Размер", "size", True),
-    ("Создан", "created", False),
-    ("Изменён", "modified", False),
-    ("Путь", "parent", False),
+    ("Name", "name", False),
+    ("Type", "kind", False),
+    ("Format", "extension", False),
+    ("Category", "category", False),
+    ("Author", "author", False),
+    ("Size", "size", True),
+    ("Created", "created", False),
+    ("Modified", "modified", False),
+    ("Path", "parent", False),
 ]
 
 (COL_NAME, COL_KIND, COL_EXT, COL_CAT, COL_AUTHOR,
@@ -141,8 +141,8 @@ class FilterCriteria:
 
     name_text: str = ""
     extensions: set[str] = field(default_factory=set)
-    category: str = "Все"
-    kind: str = "Все"                         # "Все" / "Файл" / "Папка"
+    category: str = "All"
+    kind: str = "All"                         # "Все" / "Файл" / "Папка"
     author_text: str = ""
     min_size: int | None = None
     max_size: int | None = None
@@ -153,8 +153,8 @@ class FilterCriteria:
         return (
             not self.name_text
             and not self.extensions
-            and self.category == "Все"
-            and self.kind == "Все"
+            and self.category == "All"
+            and self.kind == "All"
             and not self.author_text
             and self.min_size is None
             and self.max_size is None
@@ -168,13 +168,13 @@ def entry_matches(entry: FileEntry, c: FilterCriteria) -> bool:
     if c.is_empty():
         return True
 
-    if c.kind != "Все" and entry.kind != c.kind:
+    if c.kind != "All" and entry.kind != c.kind:
         return False
     if c.name_text and c.name_text.lower() not in entry.name.lower():
         return False
     if c.extensions and entry.extension.lower() not in c.extensions:
         return False
-    if c.category != "Все" and entry.category != c.category:
+    if c.category != "All" and entry.category != c.category:
         return False
     if c.author_text and c.author_text.lower() not in (entry.author or "").lower():
         return False
@@ -357,7 +357,7 @@ def _make_dir_entry(path: str, existing: FileEntry | None) -> FileEntry:
         parent=os.path.dirname(path.rstrip("\\/")),
         is_dir=True,
         extension="",
-        category="Папка",
+        category="Folder",
         size=0,
         created=0.0,
         modified=0.0,

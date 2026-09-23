@@ -108,7 +108,7 @@ class FileDatabase:
             ext = "" if is_dir else _ext_of(name)
             result[path] = FileEntry(
                 name=name, path=path, parent=parent, is_dir=is_dir,
-                extension=ext, category=("Папка" if is_dir else category_for(ext)),
+                extension=ext, category=("Folder" if is_dir else category_for(ext)),
                 size=size, created=created, modified=modified, accessed=accessed,
                 author=author or "",
             )

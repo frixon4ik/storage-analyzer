@@ -207,9 +207,9 @@ class _S3Worker(QObject):
         except Exception as exc:  # noqa: BLE001
             self.error.emit(s3client.err_text(exc))
 
-SIZE_UNITS = {"Б": 1, "КБ": 1024, "МБ": 1024**2, "ГБ": 1024**3, "ТБ": 1024**4}
-APP_TITLE = "Анализатор хранилищ"
-APP_VERSION = "2.0"
+SIZE_UNITS = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+APP_TITLE = "Storage Analyzer"
+APP_VERSION = "2.1"
 MAX_RECENT = 8
 
 
@@ -301,44 +301,44 @@ class MainWindow(QMainWindow):
 
     def _build_actions(self) -> None:
         smb = netshare.is_available()
-        self.act_open = self._act("Открыть", self.browse_folder, QKeySequence.Open,
-                                  "FolderOpen", "Выбрать папку или диск для анализа (⌘O)")
+        self.act_open = self._act("Open", self.browse_folder, QKeySequence.Open,
+                                  "FolderOpen", "Choose a folder or drive to analyze (⌘O)")
         self.act_smb = self._act("SMB", self.connect_smb, "Ctrl+K", "NetworkWired",
-                                 "Подключиться к сетевой папке SMB с логином и паролем (⌘K)")
+                                 "Connect to an SMB network share with a user name and password (⌘K)")
         self.act_smb.setVisible(smb)
         self.act_s3 = self._act("S3", self.open_connect_s3, "Ctrl+Shift+K",
-                                "SyncSynchronizing", "Подключение к бакету S3 (⇧⌘K)")
-        self.act_scan = self._act("Анализ", self.start_scan, "Ctrl+R", "MediaPlaybackStart",
-                                  "Анализировать выбранную папку/бакет (⌘R)")
-        self.act_stop = self._act("Стоп", self.cancel_scan, "Ctrl+.", "ProcessStop",
-                                  "Остановить анализ (⌘.)")
-        self.act_filters = self._act("Фильтры", self._toggle_filters, "Ctrl+Alt+F",
-                                     "FormatIndentMore", "Показать/скрыть фильтры (⌥⌘F)",
+                                "SyncSynchronizing", "Connect to an S3 bucket (⇧⌘K)")
+        self.act_scan = self._act("Analyze", self.start_scan, "Ctrl+R", "MediaPlaybackStart",
+                                  "Analyze the selected folder/bucket (⌘R)")
+        self.act_stop = self._act("Stop", self.cancel_scan, "Ctrl+.", "ProcessStop",
+                                  "Stop the analysis (⌘.)")
+        self.act_filters = self._act("Filters", self._toggle_filters, "Ctrl+Alt+F",
+                                     "FormatIndentMore", "Show/hide filters (⌥⌘F)",
                                      checkable=True)
-        self.act_rules = self._act("Правила", self.open_rules, "Ctrl+Shift+R", "EditFind",
-                                   "Отобрать файлы по условиям и выполнить действие (⇧⌘R)")
-        self.act_dups = self._act("Дубликаты", self.open_duplicates, "Ctrl+Shift+D", "EditCopy",
-                                  "Найти дубликаты и перенести их (⇧⌘D)")
-        self.act_schedule = self._act("Расписание", self.open_schedule, "Ctrl+Shift+T",
-                                      "AppointmentSoon", "Анализ и автоархивация по расписанию (⇧⌘T)")
-        self.act_settings = self._act("Настройки…", self.open_settings, QKeySequence.Preferences,
-                                      "DocumentProperties", "База данных и уведомления Telegram")
+        self.act_rules = self._act("Rules", self.open_rules, "Ctrl+Shift+R", "EditFind",
+                                   "Select files by conditions and run an action (⇧⌘R)")
+        self.act_dups = self._act("Duplicates", self.open_duplicates, "Ctrl+Shift+D", "EditCopy",
+                                  "Find duplicates and move them away (⇧⌘D)")
+        self.act_schedule = self._act("Schedule", self.open_schedule, "Ctrl+Shift+T",
+                                      "AppointmentSoon", "Scheduled analysis and auto-archiving (⇧⌘T)")
+        self.act_settings = self._act("Settings…", self.open_settings, QKeySequence.Preferences,
+                                      "DocumentProperties", "Database and Telegram notifications")
         self.act_settings.setMenuRole(QAction.PreferencesRole)
         if not self.act_settings.shortcut().toString():
             self.act_settings.setShortcut(QKeySequence("Ctrl+,"))
-        self.act_export = self._act("Экспорт списка в CSV…", self.export_visible, "Ctrl+E",
-                                    "DocumentSaveAs", "Сохранить показанные строки в CSV (⌘E)")
-        self.act_copy = self._act("Копировать путь", self._copy_selected_paths, QKeySequence.Copy)
-        self.act_find = self._act("Поиск", lambda: (self.search.setFocus(), self.search.selectAll()),
+        self.act_export = self._act("Export List to CSV…", self.export_visible, "Ctrl+E",
+                                    "DocumentSaveAs", "Save the rows shown to a CSV file (⌘E)")
+        self.act_copy = self._act("Copy Path", self._copy_selected_paths, QKeySequence.Copy)
+        self.act_find = self._act("Search", lambda: (self.search.setFocus(), self.search.selectAll()),
                                   QKeySequence.Find)
-        self.act_reset = self._act("Сбросить фильтры", self.reset_filters, "Ctrl+Alt+R")
-        self.act_quicklook = self._act("Быстрый просмотр", self._quick_look, "Space")
+        self.act_reset = self._act("Reset Filters", self.reset_filters, "Ctrl+Alt+R")
+        self.act_quicklook = self._act("Quick Look", self._quick_look, "Space")
         self.act_quicklook.setShortcutContext(Qt.WidgetWithChildrenShortcut)
-        self.act_reveal = self._act(f"Показать в {ui.FILE_MANAGER}", self._reveal_selected,
+        self.act_reveal = self._act(f"Show in {ui.FILE_MANAGER}", self._reveal_selected,
                                     "Ctrl+Shift+F")
-        self.act_view_list = self._act("Список", lambda on: on and self._set_view(False),
+        self.act_view_list = self._act("List", lambda on: on and self._set_view(False),
                                        "Ctrl+1", checkable=True)
-        self.act_view_tree = self._act("Папки (дерево)", lambda on: on and self._set_view(True),
+        self.act_view_tree = self._act("Folders (tree)", lambda on: on and self._set_view(True),
                                        "Ctrl+2", checkable=True)
         self._view_group = QActionGroup(self)  # ссылка обязательна, иначе группу соберёт GC
         self._view_group.addAction(self.act_view_list)
@@ -346,21 +346,21 @@ class MainWindow(QMainWindow):
         self._suppress_view = True   # не перестраивать вид при программном переключении
         self.act_view_list.setChecked(True)
         self._suppress_view = False
-        self.act_expand = self._act("Развернуть всё", lambda: self.tree.expandAll(), "Ctrl+Alt+Right")
-        self.act_collapse = self._act("Свернуть всё", lambda: self.tree.collapseAll(), "Ctrl+Alt+Left")
-        self.act_sidebar = self._act("Боковая панель", lambda on: self.sidebar.setVisible(on),
+        self.act_expand = self._act("Expand All", lambda: self.tree.expandAll(), "Ctrl+Alt+Right")
+        self.act_collapse = self._act("Collapse All", lambda: self.tree.collapseAll(), "Ctrl+Alt+Left")
+        self.act_sidebar = self._act("Sidebar", lambda on: self.sidebar.setVisible(on),
                                      "Meta+Ctrl+S", checkable=True)
-        self.act_summary = self._act("Сводка", lambda on: self.summary.setVisible(on),
+        self.act_summary = self._act("Summary", lambda on: self.summary.setVisible(on),
                                      "Ctrl+Alt+S", checkable=True)
-        self.act_about = self._act(f"О программе «{APP_TITLE}»", self._about)
+        self.act_about = self._act(f"About {APP_TITLE}", self._about)
         self.act_about.setMenuRole(QAction.AboutRole)
 
     def _build_menus(self) -> None:
         mb = self.menuBar()
-        m = mb.addMenu("Файл")
+        m = mb.addMenu("File")
         for a in (self.act_open, self.act_smb, self.act_s3):
             m.addAction(a)
-        self.recent_menu = m.addMenu("Недавние папки")
+        self.recent_menu = m.addMenu("Recent Folders")
         self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
         m.addSeparator()
         m.addAction(self.act_scan)
@@ -370,19 +370,19 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction(self.act_settings)
         m.addAction(self.act_about)
-        close = self._act("Закрыть окно", self.close, QKeySequence.Close)
+        close = self._act("Close Window", self.close, QKeySequence.Close)
         m.addAction(close)
 
-        m = mb.addMenu("Правка")
+        m = mb.addMenu("Edit")
         m.addAction(self.act_copy)
-        sel_all = self._act("Выделить всё", lambda: self._current_view().selectAll(),
+        sel_all = self._act("Select All", lambda: self._current_view().selectAll(),
                             QKeySequence.SelectAll)
         m.addAction(sel_all)
         m.addSeparator()
         m.addAction(self.act_find)
         m.addAction(self.act_reset)
 
-        m = mb.addMenu("Вид")
+        m = mb.addMenu("View")
         m.addAction(self.act_view_list)
         m.addAction(self.act_view_tree)
         m.addSeparator()
@@ -393,23 +393,23 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_sidebar)
         m.addAction(self.act_summary)
 
-        m = mb.addMenu("Объект")
-        m.addAction(self._act("Открыть", lambda: self._open_entry(self._first_selected()),
+        m = mb.addMenu("Item")
+        m.addAction(self._act("Open", lambda: self._open_entry(self._first_selected()),
                               "Ctrl+Down"))
         if sys.platform == "darwin":
             # пункт меню без клавиши: пробел работает только в списке/дереве
-            m.addAction(self._act("Быстрый просмотр (пробел)", self._quick_look))
+            m.addAction(self._act("Quick Look (Space)", self._quick_look))
         m.addAction(self.act_reveal)
         m.addAction(self.act_copy)
 
-        m = mb.addMenu("Инструменты")
+        m = mb.addMenu("Tools")
         m.addAction(self.act_rules)
         m.addAction(self.act_dups)
         m.addAction(self.act_schedule)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
-        tb = QToolBar("Панель инструментов")
+        tb = QToolBar("Toolbar")
         tb.setObjectName("main_toolbar")
         tb.setMovable(False)
         tb.setFloatable(False)
@@ -430,10 +430,10 @@ class MainWindow(QMainWindow):
         sl.setContentsMargins(4, 0, 4, 0)
         sl.setSpacing(0)
         self.seg_list = QToolButton()
-        self.seg_list.setText("Список")
+        self.seg_list.setText("List")
         self.seg_list.setObjectName("segL")
         self.seg_tree = QToolButton()
-        self.seg_tree.setText("Дерево")
+        self.seg_tree.setText("Tree")
         self.seg_tree.setObjectName("segR")
         for b, act in ((self.seg_list, self.act_view_list), (self.seg_tree, self.act_view_tree)):
             b.setCheckable(True)
@@ -463,7 +463,7 @@ class MainWindow(QMainWindow):
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         tb.addWidget(spacer)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Поиск по имени")
+        self.search.setPlaceholderText("Search by name")
         self.search.setClearButtonEnabled(True)
         self.search.addAction(ui.icon("SystemSearch"), QLineEdit.LeadingPosition)
         self.search.setFixedWidth(230)
@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         self.progress.setMaximumWidth(220)
         self.progress.setTextVisible(False)
-        self.count_label = QLabel("Выберите папку для анализа")
+        self.count_label = QLabel("Choose a folder to analyze")
         self.statusBar().addWidget(self.count_label, 1)
         self.statusBar().addPermanentWidget(self.progress)
         self.statusBar().setSizeGripEnabled(False)
@@ -522,7 +522,7 @@ class MainWindow(QMainWindow):
         # --- строка расположения
         loc = QHBoxLayout()
         loc.setSpacing(6)
-        self.path_label = QLabel("Папка:")
+        self.path_label = QLabel("Folder:")
         loc.addWidget(self.path_label)
         self.path_edit = QLineEdit()
         self.path_edit.setPlaceholderText(ui.PATH_HINT)
@@ -535,14 +535,14 @@ class MainWindow(QMainWindow):
         self._path_completer.setCaseSensitivity(Qt.CaseInsensitive)
         self.path_edit.setCompleter(self._path_completer)
         loc.addWidget(self.path_edit, 1)
-        self.browse_btn = QPushButton("Выбрать…")
+        self.browse_btn = QPushButton("Choose…")
         self.browse_btn.clicked.connect(self.browse_folder)
         loc.addWidget(self.browse_btn)
-        self.s3_btn = QPushButton("Подключение S3…")
+        self.s3_btn = QPushButton("S3 Connection…")
         self.s3_btn.clicked.connect(self.open_connect_s3)
         self.s3_btn.setVisible(False)
         loc.addWidget(self.s3_btn)
-        self.scan_btn = QPushButton("Анализировать")
+        self.scan_btn = QPushButton("Analyze")
         self.scan_btn.setDefault(True)
         self.scan_btn.clicked.connect(self.start_scan)
         loc.addWidget(self.scan_btn)
@@ -551,23 +551,23 @@ class MainWindow(QMainWindow):
         # --- параметры анализа
         opts = QHBoxLayout()
         opts.setSpacing(14)
-        self.recursive_cb = QCheckBox("С подпапками")
+        self.recursive_cb = QCheckBox("Include subfolders")
         self.recursive_cb.setChecked(True)
-        self.dirs_cb = QCheckBox("Показывать папки")
+        self.dirs_cb = QCheckBox("Show folders")
         self.dirs_cb.setChecked(True)
-        self.authors_cb = QCheckBox("Определять автора")
+        self.authors_cb = QCheckBox("Detect author")
         self.authors_cb.setToolTip(
-            "Читать «Автора» файла (как в Проводнике), иначе — владельца файла.\n"
-            "Замедляет сканирование, особенно на сетевых хранилищах."
+            "Read the file's Author property (as in Explorer), otherwise the file owner.\n"
+            "Slows down scanning, especially on network shares."
             if sys.platform == "win32" else
-            "Показывать владельца файла (учётную запись).\n"
-            "Немного замедляет сканирование, особенно на сетевых хранилищах."
+            "Show the file owner (user account).\n"
+            "Slightly slows down scanning, especially on network shares."
         )
-        self.incremental_cb = QCheckBox("Инкрементно (база)")
+        self.incremental_cb = QCheckBox("Incremental (database)")
         self.incremental_cb.setChecked(True)
         self.incremental_cb.setToolTip(
-            "Сохранять результат в базу и при повторном анализе обновлять только\n"
-            "изменённые файлы (неизменённые берутся из базы — быстрее)."
+            "Save the result to the database and, on the next analysis, re-read only\n"
+            "changed files (unchanged ones come from the database — faster)."
         )
         for cb in (self.recursive_cb, self.dirs_cb, self.authors_cb, self.incremental_cb):
             f = cb.font()
@@ -590,9 +590,9 @@ class MainWindow(QMainWindow):
         self.result_title.setFont(tf)
         self.result_title.setTextInteractionFlags(Qt.TextSelectableByMouse)
         head.addWidget(self.result_title, 1)
-        self.expand_btn = QPushButton("Развернуть всё")
+        self.expand_btn = QPushButton("Expand All")
         self.expand_btn.clicked.connect(lambda: self.tree.expandAll())
-        self.collapse_btn = QPushButton("Свернуть всё")
+        self.collapse_btn = QPushButton("Collapse All")
         self.collapse_btn.clicked.connect(lambda: self.tree.collapseAll())
         for b in (self.expand_btn, self.collapse_btn):
             b.setVisible(False)
@@ -691,61 +691,61 @@ class MainWindow(QMainWindow):
         self.f_ext = QLineEdit()
         self.f_ext.setPlaceholderText("jpg, png, pdf")
         self.f_category = QComboBox()
-        self.f_category.addItem("Все")
+        self.f_category.addItem("All")
         self.f_kind = QComboBox()
-        self.f_kind.addItems(["Все", "Файл", "Папка"])
+        self.f_kind.addItems(["All", "File", "Folder"])
         self.f_author = QLineEdit()
-        self.f_author.setPlaceholderText("содержит…")
-        grid.addWidget(lbl("Формат:"), 0, 0)
+        self.f_author.setPlaceholderText("contains…")
+        grid.addWidget(lbl("Format:"), 0, 0)
         grid.addWidget(self.f_ext, 0, 1)
-        grid.addWidget(lbl("Категория:"), 0, 2)
+        grid.addWidget(lbl("Category:"), 0, 2)
         grid.addWidget(self.f_category, 0, 3)
-        grid.addWidget(lbl("Тип:"), 0, 4)
+        grid.addWidget(lbl("Type:"), 0, 4)
         grid.addWidget(self.f_kind, 0, 5)
-        grid.addWidget(lbl("Автор:"), 0, 6)
+        grid.addWidget(lbl("Author:"), 0, 6)
         grid.addWidget(self.f_author, 0, 7)
 
         size_w = QWidget()
         sz = QHBoxLayout(size_w)
         sz.setContentsMargins(0, 0, 0, 0)
         self.f_min_size = QLineEdit()
-        self.f_min_size.setPlaceholderText("от")
+        self.f_min_size.setPlaceholderText("from")
         self.f_max_size = QLineEdit()
-        self.f_max_size.setPlaceholderText("до")
+        self.f_max_size.setPlaceholderText("to")
         self.f_size_unit = QComboBox()
         self.f_size_unit.addItems(list(SIZE_UNITS.keys()))
-        self.f_size_unit.setCurrentText("МБ")
+        self.f_size_unit.setCurrentText("MB")
         sz.addWidget(self.f_min_size)
         sz.addWidget(QLabel("–"))
         sz.addWidget(self.f_max_size)
         sz.addWidget(self.f_size_unit)
-        grid.addWidget(lbl("Размер:"), 1, 0)
+        grid.addWidget(lbl("Size:"), 1, 0)
         grid.addWidget(size_w, 1, 1, 1, 3)
 
         date_w = QWidget()
         dl = QHBoxLayout(date_w)
         dl.setContentsMargins(0, 0, 0, 0)
-        self.f_date_on = QCheckBox("Изменён с")
+        self.f_date_on = QCheckBox("Modified from")
         self.f_date_from = QDateEdit()
         self.f_date_from.setCalendarPopup(True)
-        self.f_date_from.setDisplayFormat("dd.MM.yyyy")
+        self.f_date_from.setDisplayFormat("yyyy-MM-dd")
         self.f_date_from.setDate(QDate.currentDate().addMonths(-1))
         self.f_date_from.setEnabled(False)
         self.f_date_to = QDateEdit()
         self.f_date_to.setCalendarPopup(True)
-        self.f_date_to.setDisplayFormat("dd.MM.yyyy")
+        self.f_date_to.setDisplayFormat("yyyy-MM-dd")
         self.f_date_to.setDate(QDate.currentDate())
         self.f_date_to.setEnabled(False)
         self.f_date_on.toggled.connect(self.f_date_from.setEnabled)
         self.f_date_on.toggled.connect(self.f_date_to.setEnabled)
         dl.addWidget(self.f_date_on)
         dl.addWidget(self.f_date_from)
-        dl.addWidget(QLabel("по"))
+        dl.addWidget(QLabel("to"))
         dl.addWidget(self.f_date_to)
         dl.addStretch(1)
         grid.addWidget(date_w, 1, 4, 1, 3)
 
-        reset_btn = QPushButton("Сбросить")
+        reset_btn = QPushButton("Reset")
         reset_btn.clicked.connect(self.reset_filters)
         grid.addWidget(reset_btn, 1, 7, alignment=Qt.AlignRight)
         grid.setColumnStretch(1, 2)
@@ -827,13 +827,13 @@ class MainWindow(QMainWindow):
         self.recent_menu.clear()
         items = self._recent()
         if not items:
-            a = self.recent_menu.addAction("Нет недавних")
+            a = self.recent_menu.addAction("No recent folders")
             a.setEnabled(False)
             return
         for p in items:
             self.recent_menu.addAction(p, lambda p=p: self._choose_location(p))
         self.recent_menu.addSeparator()
-        self.recent_menu.addAction("Очистить список", lambda: (
+        self.recent_menu.addAction("Clear List", lambda: (
             self.qsettings.setValue("recent", []), self.sidebar.set_recent([])))
 
     # ------------------------------------------------------ источник
@@ -842,7 +842,7 @@ class MainWindow(QMainWindow):
             return
         self.mode = mode
         s3 = mode == "s3"
-        self.path_label.setText("S3:" if s3 else "Папка:")
+        self.path_label.setText("S3:" if s3 else "Folder:")
         self.path_edit.setReadOnly(s3)
         self.path_edit.setClearButtonEnabled(not s3)
         self.path_edit.setCompleter(None if s3 else self._path_completer)
@@ -850,7 +850,7 @@ class MainWindow(QMainWindow):
         self.s3_btn.setVisible(s3)
         self.recursive_cb.setVisible(not s3)
         self.authors_cb.setVisible(not s3)
-        self.dirs_cb.setText("Показывать папки (префиксы)" if s3 else "Показывать папки")
+        self.dirs_cb.setText("Show folders (prefixes)" if s3 else "Show folders")
         if s3:
             self._refresh_s3_target()
         else:
@@ -871,7 +871,7 @@ class MainWindow(QMainWindow):
             self.path_edit.setText(self._s3_label())
         else:
             self.path_edit.setText("")
-            self.path_edit.setPlaceholderText("нажмите «Подключение S3…»")
+            self.path_edit.setPlaceholderText("click “S3 Connection…”")
 
     def _choose_location(self, path: str) -> None:
         if self._scanning:
@@ -888,7 +888,7 @@ class MainWindow(QMainWindow):
 
     def open_connect_s3(self) -> None:
         if not s3client.is_available():
-            QMessageBox.warning(self, "Нет boto3", "Установите boto3: pip install boto3")
+            QMessageBox.warning(self, "boto3 is missing", "Install boto3: pip install boto3")
             return
         dlg = S3ConnectDialog(self, self.s3cfg)
         if dlg.exec() == QDialog.Accepted:
@@ -944,16 +944,16 @@ class MainWindow(QMainWindow):
         start = self.path_edit.text().strip() if self.mode == "file" else ""
         if not start or not os.path.isdir(start):
             start = os.path.expanduser("~")
-        folder = QFileDialog.getExistingDirectory(self, "Выберите папку для анализа", start)
+        folder = QFileDialog.getExistingDirectory(self, "Choose a folder to analyze", start)
         if folder:
             self._choose_location(os.path.normpath(folder))
 
     def connect_smb(self, preset: str = "") -> None:
         if not netshare.is_available():
             QMessageBox.warning(
-                self, "Недоступно",
-                "Подключение по SMB с учётными данными доступно на Windows и macOS.\n"
-                "Смонтируйте ресурс средствами ОС и укажите путь монтирования.",
+                self, "Not available",
+                "SMB connections with credentials are available on Windows and macOS.\n"
+                "Mount the share with your OS tools and enter the mount path.",
             )
             return
         preset = preset if isinstance(preset, str) else ""
@@ -968,7 +968,7 @@ class MainWindow(QMainWindow):
     def open_schedule(self) -> None:
         if self.mode == "s3":
             if not self.s3cfg.bucket:
-                QMessageBox.warning(self, "Не подключено", "Сначала задайте подключение к S3.")
+                QMessageBox.warning(self, "Not connected", "Set up the S3 connection first.")
                 return
             dlg = ScheduleDialog(
                 self, mode="s3", path=self.s3cfg.bucket, db_path=self.db_path,
@@ -988,8 +988,8 @@ class MainWindow(QMainWindow):
         entries = self.model.all_entries()
         if not entries:
             QMessageBox.information(
-                self, "Нет данных",
-                "Сначала проанализируйте папку — правила применяются к её содержимому.",
+                self, "No data",
+                "Analyze a folder first — rules are applied to its contents.",
             )
             return
         cats = sorted({e.category for e in entries})
@@ -1007,7 +1007,7 @@ class MainWindow(QMainWindow):
     def open_duplicates(self) -> None:
         entries = self.model.all_entries()
         if not entries:
-            QMessageBox.information(self, "Нет данных", "Сначала проанализируйте папку/бакет.")
+            QMessageBox.information(self, "No data", "Analyze a folder/bucket first.")
             return
         DuplicatesDialog(self, entries=entries, mode=self.mode,
                          root=self._last_root, s3cfg=self.s3cfg).exec()
@@ -1020,29 +1020,29 @@ class MainWindow(QMainWindow):
     def export_visible(self) -> None:
         rows = self.model.visible_entries()
         if not rows:
-            QMessageBox.information(self, "Нет данных", "Список пуст — экспортировать нечего.")
+            QMessageBox.information(self, "No data", "The list is empty — nothing to export.")
             return
-        base = os.path.basename(self._last_root.rstrip("/\\")) or "список"
+        base = os.path.basename(self._last_root.rstrip("/\\")) or "list"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Экспорт списка", os.path.join(os.path.expanduser("~"), f"{base}.csv"),
+            self, "Export List", os.path.join(os.path.expanduser("~"), f"{base}.csv"),
             "CSV (*.csv)")
         if not path:
             return
         try:
             rules.export_csv(rows, path)
         except OSError as exc:
-            QMessageBox.critical(self, "Ошибка", str(exc))
+            QMessageBox.critical(self, "Error", str(exc))
             return
-        self.count_label.setText(f"Экспортировано строк: {len(rows):,} → {path}".replace(",", " "))
+        self.count_label.setText(f"Exported rows: {len(rows):,} → {path}")
 
     def _about(self) -> None:
         QMessageBox.about(
-            self, f"О программе «{APP_TITLE}»",
+            self, f"About {APP_TITLE}",
             f"<h3>{APP_TITLE} {APP_VERSION}</h3>"
-            "<p>Анализ содержимого локальных дисков, сетевых папок SMB и "
-            "объектных хранилищ S3: список и дерево, фильтры, сводка, "
-            "правила, дубликаты, расписание и уведомления в Telegram.</p>"
-            f"<p>База данных: <code>{self.db_path}</code></p>",
+            "<p>Analyzes the contents of local disks, SMB network shares and "
+            "S3 object storage: list and tree views, filters, summary, "
+            "rules, duplicates, scheduling and Telegram notifications.</p>"
+            f"<p>Database: <code>{self.db_path}</code></p>",
         )
 
     def start_scan(self) -> None:
@@ -1066,11 +1066,11 @@ class MainWindow(QMainWindow):
                 return
             if not os.path.isdir(path):
                 QMessageBox.warning(
-                    self, "Папка не найдена",
-                    f"Путь недоступен или не является папкой:\n{path}\n\n"
-                    + ("Для сетевых хранилищ используйте формат \\\\server\\share\\... "
-                       "и убедитесь, что share подключён." if sys.platform == "win32" else
-                       "Для сетевого хранилища нажмите «SMB» (⌘K) или введите адрес "
+                    self, "Folder not found",
+                    f"The path is not available or is not a folder:\n{path}\n\n"
+                    + ("For network shares use the \\\\server\\share\\... format "
+                       "and make sure the share is connected." if sys.platform == "win32" else
+                       "For a network share click “SMB” (⌘K) or enter an address like "
                        "smb://server/share."),
                 )
                 return
@@ -1083,9 +1083,9 @@ class MainWindow(QMainWindow):
         self._update_actions()
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
-        self.count_label.setText("Перечисление объектов…" if self.mode == "s3" else "Сканирование…")
+        self.count_label.setText("Listing objects…" if self.mode == "s3" else "Scanning…")
         self.model.set_entries([])
-        self.result_title.setText(self._root_title() + " — анализ…")
+        self.result_title.setText(self._root_title() + " — analyzing…")
         self.stack.setCurrentWidget(self.table)
         # дерево НЕ очищаем здесь — если по БД ничего не изменилось, переиспользуем
         # его в _on_finished (без перестроения)
@@ -1130,12 +1130,12 @@ class MainWindow(QMainWindow):
         self.controller.stop()
         self.s3_controller.stop()
         self._finish_state()
-        self.count_label.setText("Остановлено.")
-        self.result_title.setText(self._root_title() + " — остановлено")
+        self.count_label.setText("Stopped.")
+        self.result_title.setText(self._root_title() + " — stopped")
 
     def _on_phase(self, text: str) -> None:
         self.count_label.setText(text)
-        if text.startswith("Подсчёт"):
+        if text.startswith("Counting"):
             self.progress.setRange(0, 0)  # неопределённый
 
     def _on_total(self, total: int) -> None:
@@ -1150,10 +1150,10 @@ class MainWindow(QMainWindow):
             self.progress.setValue(min(done, total))
             pct = int(done * 100 / total)
             self.count_label.setText(
-                f"Обработано: {done:,} из {total:,} ({pct}%)".replace(",", " ")
+                f"Processed: {done:,} of {total:,} ({pct}%)"
             )
         else:
-            self.count_label.setText(f"Обработано: {done:,}".replace(",", " "))
+            self.count_label.setText(f"Processed: {done:,}")
 
     def _on_info(self, info: dict) -> None:
         self._last_info = info
@@ -1188,27 +1188,27 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentWidget(self.tree if self.act_view_tree.isChecked() else self.table)
         else:
             self.stack.setCurrentWidget(self.empty)
-            self.empty.title.setText("Папка пуста")
+            self.empty.title.setText("The folder is empty")
 
         info = self._last_info
         if info and info.get("had_prior"):
             self.count_label.setText(
-                f"Готово: {info['total']:,} объектов · ".replace(",", " ")
-                + f"новых/изменённых: {info['changed']:,}".replace(",", " ")
-                + f" · удалено: {info['deleted']:,} (инкрементно из базы)".replace(",", " ")
+                f"Done: {info['total']:,} items · "
+                + f"new/changed: {info['changed']:,}"
+                + f" · deleted: {info['deleted']:,} (incremental, from database)"
             )
         elif info and self.incremental_cb.isChecked():
             self.count_label.setText(
-                f"Готово: {info['total']:,} объектов (сохранено в базу)".replace(",", " ")
+                f"Done: {info['total']:,} items (saved to database)"
             )
         else:
-            self.count_label.setText(f"Готово: {len(entries):,} объектов".replace(",", " "))
+            self.count_label.setText(f"Done: {len(entries):,} items")
 
     def _on_error(self, message: str) -> None:
         self._finish_state()
-        self.count_label.setText("Ошибка.")
-        self.result_title.setText(self._root_title() + " — ошибка")
-        QMessageBox.critical(self, "Ошибка сканирования", message)
+        self.count_label.setText("Error.")
+        self.result_title.setText(self._root_title() + " — error")
+        QMessageBox.critical(self, "Scan Error", message)
 
     def _finish_state(self) -> None:
         self._scanning = False
@@ -1235,7 +1235,7 @@ class MainWindow(QMainWindow):
         current = self.f_category.currentText()
         self.f_category.blockSignals(True)
         self.f_category.clear()
-        self.f_category.addItem("Все")
+        self.f_category.addItem("All")
         self.f_category.addItems(cats)
         idx = self.f_category.findText(current)
         self.f_category.setCurrentIndex(idx if idx >= 0 else 0)
@@ -1260,7 +1260,7 @@ class MainWindow(QMainWindow):
         crit = FilterCriteria(
             name_text=self.search.text().strip(),
             extensions=exts,
-            category=self.f_category.currentText() or "Все",
+            category=self.f_category.currentText() or "All",
             kind=self.f_kind.currentText(),
             author_text=self.f_author.text().strip(),
             min_size=self._parse_size(self.f_min_size.text()),
@@ -1280,7 +1280,7 @@ class MainWindow(QMainWindow):
             self.tree_model.set_criteria(crit)
         # индикатор активного фильтра на кнопке (без учёта строки поиска)
         panel_active = not FilterCriteria(**{**crit.__dict__, "name_text": ""}).is_empty()
-        self.act_filters.setText("Фильтры •" if panel_active else "Фильтры")
+        self.act_filters.setText("Filters •" if panel_active else "Filters")
         self._update_summary()
 
     def reset_filters(self) -> None:
@@ -1326,10 +1326,10 @@ class MainWindow(QMainWindow):
         self.summary.update_data(shown, all_rows, files, dirs, total_size,
                                  by_cat_count, by_cat_size, self.f_category.currentText())
         if all_rows and not self._scanning:
-            sp = lambda n: f"{n:,}".replace(",", " ")  # noqa: E731
-            extra = "" if shown == all_rows else f" · показано {sp(shown)}"
+            sp = lambda n: f"{n:,}"  # noqa: E731
+            extra = "" if shown == all_rows else f" · {sp(shown)} shown"
             self.result_title.setText(
-                f"{self._root_title()} — {sp(all_rows)} объектов, {human_size(total_size)}" + extra)
+                f"{self._root_title()} — {sp(all_rows)} items, {human_size(total_size)}" + extra)
         elif not self._scanning and not self._last_root:
             self.result_title.setText("")
 
@@ -1366,10 +1366,10 @@ class MainWindow(QMainWindow):
                 url = s3client.presigned_url(self.s3cfg, s3client.key_from_path(entry.path, self.s3cfg.bucket))
                 QDesktopServices.openUrl(QUrl(url))
             except Exception as exc:  # noqa: BLE001
-                QMessageBox.critical(self, "Ошибка S3", s3client.err_text(exc))
+                QMessageBox.critical(self, "S3 Error", s3client.err_text(exc))
             return
         if not os.path.exists(entry.path):
-            QMessageBox.warning(self, "Недоступно", f"Объект не найден:\n{entry.path}")
+            QMessageBox.warning(self, "Not available", f"Item not found:\n{entry.path}")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(entry.path))
 
@@ -1418,7 +1418,7 @@ class MainWindow(QMainWindow):
         else:
             text = "\n".join(e.path for e in ents)
         QApplication.clipboard().setText(text)
-        self.count_label.setText(f"Скопировано путей: {len(ents)}")
+        self.count_label.setText(f"Paths copied: {len(ents)}")
 
     def _reveal_selected(self) -> None:
         if self.mode == "s3":
@@ -1449,26 +1449,26 @@ class MainWindow(QMainWindow):
             files = [e for e in self._selected_entries() if not e.is_dir]
             n = len(files) or (0 if entry.is_dir else 1)
             if not entry.is_dir:
-                menu.addAction("Открыть по ссылке", lambda: self._open_entry(entry))
+                menu.addAction("Open via Link", lambda: self._open_entry(entry))
             if n:
-                menu.addAction(f"Скачать… ({n})", self._s3_download)
-                menu.addAction(f"Переместить под префикс… ({n})", self._s3_move)
+                menu.addAction(f"Download… ({n})", self._s3_download)
+                menu.addAction(f"Move Under Prefix… ({n})", self._s3_move)
                 menu.addSeparator()
-                menu.addAction(f"Удалить… ({n})", self._s3_delete)
+                menu.addAction(f"Delete… ({n})", self._s3_delete)
                 menu.addSeparator()
-            menu.addAction("Копировать ключ",
+            menu.addAction("Copy Key",
                            lambda: QApplication.clipboard().setText(
                                s3client.key_from_path(entry.path, self.s3cfg.bucket)))
         else:
-            menu.addAction("Открыть папку" if entry.is_dir else "Открыть",
+            menu.addAction("Open Folder" if entry.is_dir else "Open",
                            lambda: self._open_entry(entry))
             if sys.platform == "darwin":
-                menu.addAction("Быстрый просмотр", self._quick_look)
-            menu.addAction(f"Показать в {ui.FILE_MANAGER}", lambda: self._open_location(entry))
+                menu.addAction("Quick Look", self._quick_look)
+            menu.addAction(f"Show in {ui.FILE_MANAGER}", lambda: self._open_location(entry))
             menu.addSeparator()
-            menu.addAction("Копировать путь", self._copy_selected_paths)
+            menu.addAction("Copy Path", self._copy_selected_paths)
             if entry.is_dir:
-                menu.addAction("Анализировать эту папку",
+                menu.addAction("Analyze This Folder",
                                lambda: self._choose_location(entry.path))
         if not menu.isEmpty():
             menu.exec(view.viewport().mapToGlobal(pos))
@@ -1477,61 +1477,61 @@ class MainWindow(QMainWindow):
     def _s3_keys_or_warn(self):
         keys = self._selected_s3_keys()
         if not keys:
-            QMessageBox.information(self, "Нет выбора", "Выделите объекты (файлы) в списке.")
+            QMessageBox.information(self, "Nothing selected", "Select objects (files) in the list.")
         return keys
 
     def _s3_download(self) -> None:
         keys = self._s3_keys_or_warn()
         if not keys:
             return
-        dest = QFileDialog.getExistingDirectory(self, "Папка для скачивания",
+        dest = QFileDialog.getExistingDirectory(self, "Download to Folder",
                                                 os.path.expanduser("~/Downloads"))
         if not dest:
             return
         self.setCursor(Qt.WaitCursor)
         ok, errors = s3client.download_keys(self.s3cfg, keys, dest)
         self.unsetCursor()
-        msg = f"Скачано: {ok} из {len(keys)}."
+        msg = f"Downloaded: {ok} of {len(keys)}."
         if errors:
-            msg += "\nОшибки:\n" + "\n".join(errors[:5])
-        QMessageBox.information(self, "Скачивание", msg)
+            msg += "\nErrors:\n" + "\n".join(errors[:5])
+        QMessageBox.information(self, "Download", msg)
 
     def _s3_move(self) -> None:
         keys = self._s3_keys_or_warn()
         if not keys:
             return
-        prefix, ok = QInputDialog.getText(self, "Переместить под префикс",
-                                          "Целевой префикс (например archive/2025):")
+        prefix, ok = QInputDialog.getText(self, "Move Under Prefix",
+                                          "Target prefix (e.g. archive/2025):")
         if not ok or not prefix.strip():
             return
-        if QMessageBox.question(self, "Подтверждение",
-                                f"Переместить {len(keys)} объектов под «{prefix.strip()}»?",
+        if QMessageBox.question(self, "Confirm",
+                                f"Move {len(keys)} objects under “{prefix.strip()}”?",
                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
         self.setCursor(Qt.WaitCursor)
         moved, _f, errors = s3client.move_to_prefix(self.s3cfg, keys, prefix.strip())
         self.unsetCursor()
-        msg = f"Перемещено: {moved} из {len(keys)}."
+        msg = f"Moved: {moved} of {len(keys)}."
         if errors:
-            msg += "\nОшибки:\n" + "\n".join(errors[:5])
-        QMessageBox.information(self, "Перемещение", msg)
+            msg += "\nErrors:\n" + "\n".join(errors[:5])
+        QMessageBox.information(self, "Move", msg)
         self.start_scan()
 
     def _s3_delete(self) -> None:
         keys = self._s3_keys_or_warn()
         if not keys:
             return
-        if QMessageBox.warning(self, "Удаление",
-                               f"Удалить безвозвратно {len(keys)} объектов из «{self.s3cfg.bucket}»?",
+        if QMessageBox.warning(self, "Delete",
+                               f"Permanently delete {len(keys)} objects from “{self.s3cfg.bucket}”?",
                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
         self.setCursor(Qt.WaitCursor)
         deleted, errors = s3client.delete_keys(self.s3cfg, keys)
         self.unsetCursor()
-        msg = f"Удалено: {deleted} из {len(keys)}."
+        msg = f"Deleted: {deleted} of {len(keys)}."
         if errors:
-            msg += "\nОшибки:\n" + "\n".join(errors[:5])
-        QMessageBox.information(self, "Удаление", msg)
+            msg += "\nErrors:\n" + "\n".join(errors[:5])
+        QMessageBox.information(self, "Delete", msg)
         self.start_scan()
 
     def closeEvent(self, event):  # noqa: N802
@@ -1614,7 +1614,7 @@ class DuplicatesDialog(QDialog):
 
     def __init__(self, parent=None, entries=None, mode="file", root="", s3cfg=None):
         super().__init__(parent)
-        self.setWindowTitle("Поиск дубликатов")
+        self.setWindowTitle("Find Duplicates")
         self.resize(840, 640)
         self.entries = entries or []
         self.mode = mode
@@ -1624,7 +1624,7 @@ class DuplicatesDialog(QDialog):
         self.groups = []
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Поля сравнения (дубль — где совпадают все отмеченные):"))
+        layout.addWidget(QLabel("Compare by (a duplicate is a file where all checked fields match):"))
         frow = QHBoxLayout()
         self.field_cbs = {}
         for key, label in dedup.FIELDS:
@@ -1633,16 +1633,17 @@ class DuplicatesDialog(QDialog):
                 cb.setChecked(True)
             if key == "hash" and mode == "s3":
                 cb.setEnabled(False)
-                cb.setToolTip("Для S3 сравнение по хэшу недоступно (нужно скачивание)")
+                cb.setToolTip("Hash comparison is not available for S3 (would require downloading)")
             self.field_cbs[key] = cb
             frow.addWidget(cb)
         frow.addStretch(1)
         layout.addLayout(frow)
 
         brow = QHBoxLayout()
-        self.find_btn = QPushButton("Найти дубликаты")
+        self.find_btn = QPushButton("Find Duplicates")
+        self.find_btn.setDefault(True)
         self.find_btn.clicked.connect(self._find)
-        self.cancel_btn = QPushButton("Стоп")
+        self.cancel_btn = QPushButton("Stop")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self._stop)
         brow.addWidget(self.find_btn)
@@ -1658,28 +1659,28 @@ class DuplicatesDialog(QDialog):
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(2)
-        self.tree.setHeaderLabels(["Файл / группа", "Размер"])
+        self.tree.setHeaderLabels(["File / group", "Size"])
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         layout.addWidget(self.tree, 1)
 
-        act = QGroupBox("Действие: переместить дубли (в каждой группе остаётся 1 — самый старый)")
+        act = QGroupBox("Action: move duplicates (the oldest file in each group is kept)")
         al = QHBoxLayout(act)
-        al.addWidget(QLabel("Куда:"))
+        al.addWidget(QLabel("To:"))
         self.target_edit = QLineEdit()
-        self.target_edit.setPlaceholderText("префикс, напр. duplicates/" if mode == "s3"
-                                            else ui.TARGET_HINT.replace("Карантин", "Дубли"))
+        self.target_edit.setPlaceholderText("prefix, e.g. duplicates/" if mode == "s3"
+                                            else ui.TARGET_HINT.replace("Quarantine", "Duplicates"))
         al.addWidget(self.target_edit, 1)
         if mode != "s3":
-            b = QPushButton("Обзор…")
+            b = QPushButton("Browse…")
             b.clicked.connect(self._browse)
             al.addWidget(b)
-        self.move_btn = QPushButton("Переместить дубли")
+        self.move_btn = QPushButton("Move Duplicates")
         self.move_btn.setEnabled(False)
         self.move_btn.clicked.connect(self._move)
         al.addWidget(self.move_btn)
         layout.addWidget(act)
 
-        close = QPushButton("Закрыть")
+        close = QPushButton("Close")
         close.clicked.connect(self.accept)
         layout.addWidget(close, alignment=Qt.AlignRight)
 
@@ -1689,14 +1690,14 @@ class DuplicatesDialog(QDialog):
     def _find(self):
         fields = self._selected_fields()
         if not fields:
-            QMessageBox.warning(self, "Поля", "Отметьте хотя бы одно поле сравнения.")
+            QMessageBox.warning(self, "Fields", "Check at least one field to compare.")
             return
         self.find_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.move_btn.setEnabled(False)
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
-        self.summary.setText("Поиск…")
+        self.summary.setText("Searching…")
         self.tree.clear()
         self.controller.start(self.entries, fields, self._on_progress,
                               self._on_found, self._on_error)
@@ -1704,13 +1705,13 @@ class DuplicatesDialog(QDialog):
     def _stop(self):
         self.controller.stop()
         self._reset_state()
-        self.summary.setText("Остановлено.")
+        self.summary.setText("Stopped.")
 
     def _on_progress(self, done, total):
         if total > 0:
             self.progress.setRange(0, total)
             self.progress.setValue(done)
-            self.summary.setText(f"Хэширование: {done:,} из {total:,}…".replace(",", " "))
+            self.summary.setText(f"Hashing: {done:,} of {total:,}…")
 
     def _on_found(self, groups):
         self.groups = groups
@@ -1719,7 +1720,7 @@ class DuplicatesDialog(QDialog):
 
     def _on_error(self, msg):
         self._reset_state()
-        QMessageBox.critical(self, "Ошибка", msg)
+        QMessageBox.critical(self, "Error", msg)
 
     def _reset_state(self):
         self.find_btn.setEnabled(True)
@@ -1731,23 +1732,23 @@ class DuplicatesDialog(QDialog):
         wasted = dedup.wasted_bytes(groups)
         dup_files = sum(len(g) - 1 for g in groups)
         self.summary.setText(
-            f"Групп: {len(groups):,} · лишних файлов: {dup_files:,} · "
-            f"можно освободить: {human_size(wasted)}".replace(",", " ")
+            f"Groups: {len(groups):,} · extra files: {dup_files:,} · "
+            f"can be freed: {human_size(wasted)}"
         )
         for g in groups:
             keep = dedup._kept_first(g)
             top = QTreeWidgetItem(
-                self.tree, [f"Группа из {len(g)} · {g[0].name}",
+                self.tree, [f"Group of {len(g)} · {g[0].name}",
                             human_size(sum(e.size for e in g))]
             )
             for e in g:
-                mark = "   ← оставить" if e is keep else ""
+                mark = "   ← keep" if e is keep else ""
                 QTreeWidgetItem(top, [e.path + mark, human_size(e.size)])
         self.move_btn.setEnabled(bool(groups))
 
     def _browse(self):
         start = self.target_edit.text().strip() or os.path.expanduser("~")
-        d = QFileDialog.getExistingDirectory(self, "Папка для дублей", start)
+        d = QFileDialog.getExistingDirectory(self, "Folder for Duplicates", start)
         if d:
             self.target_edit.setText(os.path.normpath(d))
 
@@ -1758,21 +1759,21 @@ class DuplicatesDialog(QDialog):
         if self.mode != "s3":
             target = os.path.expanduser(target)
         if not target:
-            QMessageBox.warning(self, "Куда", "Укажите папку/префикс назначения.")
+            QMessageBox.warning(self, "Destination", "Specify the destination folder/prefix.")
             return
         dups = dedup.duplicates_to_move(self.groups)
         if not dups:
-            QMessageBox.information(self, "Нет дублей", "Перемещать нечего.")
+            QMessageBox.information(self, "No duplicates", "Nothing to move.")
             return
         if self.mode != "s3" and _is_inside(target, self.root):
-            QMessageBox.warning(self, "Недопустимо",
-                                "Папка назначения не должна быть внутри анализируемой.")
+            QMessageBox.warning(self, "Not allowed",
+                                "The destination folder must not be inside the analyzed folder.")
             return
         total = sum(e.size for e in dups)
         if QMessageBox.question(
-            self, "Подтверждение",
-            f"Переместить {len(dups)} файлов-дублей ({human_size(total)}) в:\n{target}\n"
-            "(в каждой группе остаётся один — самый старый)\n\nПродолжить?",
+            self, "Confirm",
+            f"Move {len(dups)} duplicate files ({human_size(total)}) to:\n{target}\n"
+            "(the oldest file in each group is kept)\n\nContinue?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         ) != QMessageBox.Yes:
             return
@@ -1783,14 +1784,14 @@ class DuplicatesDialog(QDialog):
         else:
             moved, _f, errors = rules.execute_move(dups, self.root, target)
         self.unsetCursor()
-        msg = f"Перемещено: {moved} из {len(dups)}."
+        msg = f"Moved: {moved} of {len(dups)}."
         if errors:
-            msg += "\nОшибки:\n" + "\n".join(errors[:5])
-        QMessageBox.information(self, "Готово", msg)
+            msg += "\nErrors:\n" + "\n".join(errors[:5])
+        QMessageBox.information(self, "Done", msg)
         self.groups = []
         self.tree.clear()
         self.move_btn.setEnabled(False)
-        self.summary.setText("Готово. Запустите анализ заново для актуализации списка.")
+        self.summary.setText("Done. Run the analysis again to refresh the list.")
 
     def closeEvent(self, event):  # noqa: N802
         self.controller.stop()
@@ -1802,22 +1803,22 @@ class S3ConnectDialog(QDialog):
 
     def __init__(self, parent=None, cfg=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Подключение к S3")
+        self.setWindowTitle("S3 Connection")
         self.setMinimumWidth(520)
         cfg = cfg or s3client.S3Config()
         self.cfg = cfg
         form = _form()
         self.endpoint = QLineEdit(cfg.endpoint)
-        self.endpoint.setPlaceholderText("для AWS оставьте пустым; иначе https://minio:9000")
+        self.endpoint.setPlaceholderText("leave empty for AWS; otherwise https://minio:9000")
         form.addRow("Endpoint:", self.endpoint)
         self.region = QLineEdit(cfg.region)
-        self.region.setPlaceholderText("например us-east-1")
-        form.addRow("Регион:", self.region)
+        self.region.setPlaceholderText("e.g. us-east-1")
+        form.addRow("Region:", self.region)
         self.access = QLineEdit(cfg.access_key)
         form.addRow("Access Key:", self.access)
         self.secret = QLineEdit(cfg.secret_key)
         self.secret.setEchoMode(QLineEdit.Password)
-        show = QCheckBox("Показать")
+        show = QCheckBox("Show")
         show.toggled.connect(lambda on: self.secret.setEchoMode(QLineEdit.Normal if on else QLineEdit.Password))
         srow = QHBoxLayout()
         srow.addWidget(self.secret, 1)
@@ -1826,21 +1827,21 @@ class S3ConnectDialog(QDialog):
         sw.setLayout(srow)
         form.addRow("Secret Key:", sw)
         self.bucket = QLineEdit(cfg.bucket)
-        form.addRow("Бакет:", self.bucket)
+        form.addRow("Bucket:", self.bucket)
         self.prefix = QLineEdit(cfg.prefix)
-        self.prefix.setPlaceholderText("необязательно: анализировать только этот префикс")
-        form.addRow("Префикс:", self.prefix)
+        self.prefix.setPlaceholderText("optional: analyze only this prefix")
+        form.addRow("Prefix:", self.prefix)
         self.status = QLabel("")
         self.status.setWordWrap(True)
         form.addRow("", self.status)
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         row = QHBoxLayout()
-        test_btn = QPushButton("Проверить")
+        test_btn = QPushButton("Test")
         test_btn.clicked.connect(self._test)
-        save_btn = QPushButton("Сохранить и закрыть")
+        save_btn = QPushButton("Save and Close")
         save_btn.clicked.connect(self._save)
-        cancel = QPushButton("Отмена")
+        cancel = QPushButton("Cancel")
         cancel.clicked.connect(self.reject)
         row.addWidget(test_btn)
         row.addStretch(1)
@@ -1859,13 +1860,13 @@ class S3ConnectDialog(QDialog):
         self.setCursor(Qt.WaitCursor)
         ok, msg = s3client.test_connection(self._collect())
         self.unsetCursor()
-        self.status.setText(("Успех: " if ok else "Ошибка: ") + msg)
+        self.status.setText(("Success: " if ok else "Error: ") + msg)
         self.status.setStyleSheet("color:#27ae60;" if ok else "color:#c0392b;")
 
     def _save(self) -> None:
         cfg = self._collect()
         if not cfg.bucket:
-            self.status.setText("Укажите бакет.")
+            self.status.setText("Specify a bucket.")
             return
         self.cfg = cfg
         app_settings.set_s3({
@@ -1880,7 +1881,7 @@ class S3RulesDialog(QDialog):
 
     def __init__(self, parent=None, entries=None, cats=None, cfg=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Правила S3: условия → действие")
+        self.setWindowTitle("S3 Rules: condition → action")
         self.resize(840, 620)
         self.entries = entries or []
         self.cats = cats or []
@@ -1890,38 +1891,38 @@ class S3RulesDialog(QDialog):
 
         layout = QVBoxLayout(self)
         name_row = QHBoxLayout()
-        name_row.addWidget(QLabel("Имя правила:"))
+        name_row.addWidget(QLabel("Rule name:"))
         self.name_edit = QLineEdit(_safe_task_name("rule_" + (cfg.bucket if cfg else "s3")))
         name_row.addWidget(self.name_edit, 1)
         layout.addLayout(name_row)
 
-        layout.addWidget(QLabel("Условия (объединяются по «И»):"))
+        layout.addWidget(QLabel("Conditions (combined with AND):"))
         self._cond_area = QVBoxLayout()
         wrap = QWidget()
         wrap.setLayout(self._cond_area)
         layout.addWidget(wrap)
-        add_btn = QPushButton("+ Добавить условие")
+        add_btn = QPushButton("+ Add Condition")
         add_btn.setAutoDefault(False)
         add_btn.clicked.connect(self._add_row)
         layout.addWidget(add_btn, alignment=Qt.AlignLeft)
 
-        act = QGroupBox("Действие")
+        act = QGroupBox("Action")
         act_lay = QHBoxLayout(act)
-        act_lay.addWidget(QLabel("Что делать:"))
+        act_lay.addWidget(QLabel("Action:"))
         self.action_combo = QComboBox()
-        self.action_combo.addItems(["Удалить", "Переместить под префикс"])
+        self.action_combo.addItems(["Delete", "Move Under Prefix"])
         self.action_combo.currentIndexChanged.connect(self._upd_action)
         act_lay.addWidget(self.action_combo)
         self.prefix_edit = QLineEdit()
-        self.prefix_edit.setPlaceholderText("целевой префикс, напр. archive/2025")
+        self.prefix_edit.setPlaceholderText("target prefix, e.g. archive/2025")
         act_lay.addWidget(self.prefix_edit, 1)
         layout.addWidget(act)
 
         btns = QHBoxLayout()
-        find_btn = QPushButton("Найти совпадения")
+        find_btn = QPushButton("Find Matches")
         find_btn.setDefault(True)
         find_btn.clicked.connect(self._find)
-        self.run_btn = QPushButton("Выполнить")
+        self.run_btn = QPushButton("Run")
         self.run_btn.clicked.connect(self._run)
         self.run_btn.setEnabled(False)
         btns.addWidget(find_btn)
@@ -1932,18 +1933,18 @@ class S3RulesDialog(QDialog):
         self.summary = QLabel("—")
         layout.addWidget(self.summary)
         self.preview = QTableWidget(0, 4)
-        self.preview.setHorizontalHeaderLabels(["Имя", "Размер", "Категория", "Ключ"])
+        self.preview.setHorizontalHeaderLabels(["Name", "Size", "Category", "Key"])
         self.preview.horizontalHeader().setStretchLastSection(True)
         self.preview.setEditTriggers(QTableWidget.NoEditTriggers)
         self.preview.verticalHeader().setVisible(False)
         layout.addWidget(self.preview, 1)
 
         # --- автоархивация по расписанию
-        sched = QGroupBox("Автоархивация по расписанию (без подтверждения)")
+        sched = QGroupBox("Scheduled auto-archiving (no confirmation)")
         sl = QHBoxLayout(sched)
-        sl.addWidget(QLabel("Периодичность:"))
+        sl.addWidget(QLabel("Frequency:"))
         self.sched_freq = QComboBox()
-        self.sched_freq.addItems(["Каждый день", "Каждые N часов", "Каждые N минут"])
+        self.sched_freq.addItems(["Daily", "Every N hours", "Every N minutes"])
         self.sched_freq.currentIndexChanged.connect(self._upd_sched)
         sl.addWidget(self.sched_freq)
         sl.addWidget(QLabel("N:"))
@@ -1951,20 +1952,20 @@ class S3RulesDialog(QDialog):
         self.sched_interval.setRange(1, 999)
         self.sched_interval.setValue(6)
         sl.addWidget(self.sched_interval)
-        sl.addWidget(QLabel("Время:"))
+        sl.addWidget(QLabel("Time:"))
         self.sched_time = QTimeEdit(QTime(3, 0))
         self.sched_time.setDisplayFormat("HH:mm")
         sl.addWidget(self.sched_time)
-        self.sched_system_cb = QCheckBox("как служба (SYSTEM)")
+        self.sched_system_cb = QCheckBox("as a service (SYSTEM)")
         self.sched_system_cb.setVisible(sys.platform == "win32")
         sl.addWidget(self.sched_system_cb)
         sl.addStretch(1)
-        self.sched_btn = QPushButton("Создать задание автоархивации")
+        self.sched_btn = QPushButton("Create Auto-Archiving Task")
         self.sched_btn.clicked.connect(self._schedule)
         sl.addWidget(self.sched_btn)
         layout.addWidget(sched)
 
-        close_btn = QPushButton("Закрыть")
+        close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn, alignment=Qt.AlignRight)
         self._add_row()
@@ -1999,11 +2000,11 @@ class S3RulesDialog(QDialog):
         import time
         conds = self._conditions()
         if not conds:
-            self.summary.setText("Задайте хотя бы одно условие.")
+            self.summary.setText("Add at least one condition.")
             return
         self.matched = rules.evaluate(self.entries, conds, time.time(), include_dirs=False)
         total = sum(e.size for e in self.matched)
-        self.summary.setText(f"Совпало объектов: {len(self.matched)} · объём: {human_size(total)}")
+        self.summary.setText(f"Matched objects: {len(self.matched)} · total: {human_size(total)}")
         self.preview.setRowCount(len(self.matched))
         for i, e in enumerate(self.matched):
             self.preview.setItem(i, 0, QTableWidgetItem(e.name))
@@ -2023,26 +2024,26 @@ class S3RulesDialog(QDialog):
         if move:
             target = self.prefix_edit.text().strip().strip("/")
             if not target:
-                QMessageBox.warning(self, "Префикс", "Укажите целевой префикс.")
+                QMessageBox.warning(self, "Prefix", "Specify the target prefix.")
                 return
-            q = f"Переместить {len(keys)} объектов под «{target}»?"
+            q = f"Move {len(keys)} objects under “{target}”?"
         else:
-            q = f"Удалить безвозвратно {len(keys)} объектов?"
-        if QMessageBox.warning(self, "Подтверждение", q,
+            q = f"Permanently delete {len(keys)} objects?"
+        if QMessageBox.warning(self, "Confirm", q,
                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
         self.setCursor(Qt.WaitCursor)
         if move:
             done, _f, errors = s3client.move_to_prefix(self.cfg, keys, target)
-            word = "Перемещено"
+            word = "Moved"
         else:
             done, errors = s3client.delete_keys(self.cfg, keys)
-            word = "Удалено"
+            word = "Deleted"
         self.unsetCursor()
-        msg = f"{word}: {done} из {len(keys)}."
+        msg = f"{word}: {done} of {len(keys)}."
         if errors:
-            msg += "\nОшибки:\n" + "\n".join(errors[:5])
-        QMessageBox.information(self, "Готово", msg)
+            msg += "\nErrors:\n" + "\n".join(errors[:5])
+        QMessageBox.information(self, "Done", msg)
 
     def _upd_sched(self):
         idx = self.sched_freq.currentIndex()
@@ -2055,19 +2056,19 @@ class S3RulesDialog(QDialog):
         move = self.action_combo.currentIndex() == 1
         target = self.prefix_edit.text().strip().strip("/")
         if not name:
-            QMessageBox.warning(self, "Имя", "Укажите имя правила.")
+            QMessageBox.warning(self, "Name", "Specify the rule name.")
             return
         if not conds:
-            QMessageBox.warning(self, "Условия", "Задайте хотя бы одно условие.")
+            QMessageBox.warning(self, "Conditions", "Add at least one condition.")
             return
         if move and not target:
-            QMessageBox.warning(self, "Префикс", "Укажите целевой префикс.")
+            QMessageBox.warning(self, "Prefix", "Specify the target prefix.")
             return
-        act_word = f"перемещать под «{target}»" if move else "УДАЛЯТЬ"
+        act_word = f"move under “{target}”" if move else "DELETE"
         if QMessageBox.warning(
-            self, "Автоархивация S3",
-            f"Задание будет ПО РАСПИСАНИЮ без подтверждения {act_word} объекты "
-            f"бакета «{self.cfg.bucket}», подходящие под условия.\n\nСоздать задание?",
+            self, "S3 Auto-Archiving",
+            f"The task will {act_word} objects ON A SCHEDULE, without confirmation, "
+            f"in bucket “{self.cfg.bucket}” that match the conditions.\n\nCreate the task?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         ) != QMessageBox.Yes:
             return
@@ -2089,12 +2090,12 @@ class S3RulesDialog(QDialog):
         )
         if ok:
             QMessageBox.information(
-                self, "Готово",
-                f"Задание автоархивации S3 «{name}» создано.\n"
-                "Управление — кнопка «Расписание…».",
+                self, "Done",
+                f"S3 auto-archiving task “{name}” created.\n"
+                "Manage it with the “Schedule…” button.",
             )
         else:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось создать задание:\n{msg}")
+            QMessageBox.critical(self, "Error", f"Could not create the task:\n{msg}")
 
 
 class SmbConnectDialog(QDialog):
@@ -2102,7 +2103,7 @@ class SmbConnectDialog(QDialog):
 
     def __init__(self, parent=None, preset_path: str = "") -> None:
         super().__init__(parent)
-        self.setWindowTitle("Подключение к сетевому хранилищу (SMB)")
+        self.setWindowTitle("Connect to Network Share (SMB)")
         self.setMinimumWidth(480)
         mac = sys.platform == "darwin"
 
@@ -2115,16 +2116,16 @@ class SmbConnectDialog(QDialog):
         looks_smb = p.startswith("\\\\") or p.lower().startswith("smb://") or (mac and p.startswith("//"))
         self.path_edit = QLineEdit(p if looks_smb else "")
         self.path_edit.setPlaceholderText(ui.SMB_HINT)
-        form.addRow("Сетевой путь:", self.path_edit)
+        form.addRow("Network path:", self.path_edit)
 
         self.user_edit = QLineEdit()
         self.user_edit.setPlaceholderText(
-            "имя_пользователя  (можно DOMAIN;user)" if mac else r"имя_пользователя  (можно DOMAIN\user)")
-        form.addRow("Логин:", self.user_edit)
+            "user_name  (DOMAIN;user also works)" if mac else r"user_name  (DOMAIN\user also works)")
+        form.addRow("User name:", self.user_edit)
 
         self.pass_edit = QLineEdit()
         self.pass_edit.setEchoMode(QLineEdit.Password)
-        show_cb = QCheckBox("Показать")
+        show_cb = QCheckBox("Show")
         show_cb.toggled.connect(
             lambda on: self.pass_edit.setEchoMode(QLineEdit.Normal if on else QLineEdit.Password)
         )
@@ -2134,25 +2135,25 @@ class SmbConnectDialog(QDialog):
         pass_row.addWidget(show_cb)
         pass_wrap = QWidget()
         pass_wrap.setLayout(pass_row)
-        form.addRow("Пароль:", pass_wrap)
+        form.addRow("Password:", pass_wrap)
 
         self.drive_combo = QComboBox()
-        self.drive_combo.addItem("(без буквы диска)")
+        self.drive_combo.addItem("(no drive letter)")
         self.drive_combo.addItems(netshare.free_drive_letters())
         if netshare.supports_drive_letters():
-            form.addRow("Подключить как диск:", self.drive_combo)
+            form.addRow("Map to drive:", self.drive_combo)
         else:
             self.drive_combo.setVisible(False)
 
         self.persistent_cb = QCheckBox(
-            "Не отключать при выходе из программы" if mac else
-            "Запомнить подключение (между перезагрузками Windows)")
+            "Keep connected after quitting the app" if mac else
+            "Remember the connection (across Windows restarts)")
         form.addRow("", self.persistent_cb)
 
         if mac:
-            note = QLabel("Пароль не сохраняется программой. Оставьте поле пустым — macOS "
-                          "спросит пароль сама и предложит сохранить его в Связке ключей. "
-                          "Ресурс монтируется в /Volumes, как через Finder (⌘K).")
+            note = QLabel("The app never saves the password. Leave it empty and macOS "
+                          "will ask for it and offer to save it in the Keychain. "
+                          "The share is mounted under /Volumes, like Finder’s Connect to Server (⌘K).")
             note.setWordWrap(True)
             note.setForegroundRole(QPalette.PlaceholderText)
             form.addRow("", note)
@@ -2163,8 +2164,8 @@ class SmbConnectDialog(QDialog):
         form.addRow("", self.hint)
 
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.buttons.button(QDialogButtonBox.Ok).setText("Подключить")
-        self.buttons.button(QDialogButtonBox.Cancel).setText("Отмена")
+        self.buttons.button(QDialogButtonBox.Ok).setText("Connect")
+        self.buttons.button(QDialogButtonBox.Cancel).setText("Cancel")
         self.buttons.accepted.connect(self._try_connect)
         self.buttons.rejected.connect(self.reject)
 
@@ -2178,7 +2179,7 @@ class SmbConnectDialog(QDialog):
         remote = self.path_edit.text().strip().strip('"')
         if netshare.parse_smb(remote) is None if sys.platform == "darwin" else \
                 not remote.replace("/", "\\").startswith("\\\\"):
-            self.hint.setText("Укажите путь в формате " + ui.SMB_HINT.split("  ")[0])
+            self.hint.setText("Enter a path in the format " + ui.SMB_HINT.split("  ")[0])
             return
 
         drive = None
@@ -2187,7 +2188,7 @@ class SmbConnectDialog(QDialog):
 
         # подключение — в фоне, чтобы окно не «зависало» на медленной сети
         self.hint.setStyleSheet("")
-        self.hint.setText("Подключение…")
+        self.hint.setText("Connecting…")
         self.buttons.setEnabled(False)
         self.setCursor(Qt.BusyCursor)
         res: dict = {}
@@ -2205,7 +2206,7 @@ class SmbConnectDialog(QDialog):
         self.unsetCursor()
         self.buttons.setEnabled(True)
         self.hint.setStyleSheet("color:#c0392b;")
-        ok, message, scan_path = res.get("r", (False, "Нет ответа.", None))
+        ok, message, scan_path = res.get("r", (False, "No response.", None))
 
         if not ok:
             self.hint.setText(message)
@@ -2222,14 +2223,14 @@ class TelegramDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Уведомления Telegram")
+        self.setWindowTitle("Telegram Notifications")
         self.setMinimumWidth(480)
         token, chat = app_settings.get_telegram()
 
         form = _form()
         self.token_edit = QLineEdit(token)
         self.token_edit.setEchoMode(QLineEdit.Password)
-        show = QCheckBox("Показать")
+        show = QCheckBox("Show")
         show.toggled.connect(
             lambda on: self.token_edit.setEchoMode(QLineEdit.Normal if on else QLineEdit.Password)
         )
@@ -2238,16 +2239,16 @@ class TelegramDialog(QDialog):
         trow.addWidget(show)
         tw = QWidget()
         tw.setLayout(trow)
-        form.addRow("Токен бота:", tw)
+        form.addRow("Bot token:", tw)
 
         self.chat_edit = QLineEdit(chat)
-        self.chat_edit.setPlaceholderText("например 123456789 или @username")
+        self.chat_edit.setPlaceholderText("e.g. 123456789 or @username")
         form.addRow("Chat ID:", self.chat_edit)
 
         hint = QLabel(
-            "Создайте бота у @BotFather и вставьте токен. Chat ID можно узнать у "
-            "@userinfobot (или открыть https://api.telegram.org/bot<токен>/getUpdates "
-            "после сообщения боту)."
+            "Create a bot with @BotFather and paste its token. You can get your chat ID from "
+            "@userinfobot (or open https://api.telegram.org/bot<token>/getUpdates "
+            "after sending the bot a message)."
         )
         hint.setWordWrap(True)
         hint.setOpenExternalLinks(True)
@@ -2260,11 +2261,11 @@ class TelegramDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         row = QHBoxLayout()
-        test_btn = QPushButton("Проверить (тест)")
+        test_btn = QPushButton("Send Test")
         test_btn.clicked.connect(self._test)
-        save_btn = QPushButton("Сохранить")
+        save_btn = QPushButton("Save")
         save_btn.clicked.connect(self._save)
-        close_btn = QPushButton("Закрыть")
+        close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.reject)
         row.addWidget(test_btn)
         row.addStretch(1)
@@ -2276,15 +2277,15 @@ class TelegramDialog(QDialog):
         self.setCursor(Qt.WaitCursor)
         ok, msg = notify.send_telegram(
             self.token_edit.text().strip(), self.chat_edit.text().strip(),
-            "✅ Тест уведомления — Анализатор папок",
+            "✅ Test notification — Storage Analyzer",
         )
         self.unsetCursor()
-        self.status.setText(("Успех: " if ok else "Ошибка: ") + msg)
+        self.status.setText(("Success: " if ok else "Error: ") + msg)
         self.status.setStyleSheet("color:#27ae60;" if ok else "color:#c0392b;")
 
     def _save(self) -> None:
         app_settings.set_telegram(self.token_edit.text().strip(), self.chat_edit.text().strip())
-        self.status.setText("Сохранено.")
+        self.status.setText("Saved.")
         self.status.setStyleSheet("color:#27ae60;")
 
 
@@ -2293,7 +2294,7 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Настройки")
+        self.setWindowTitle("Settings")
         self.setMinimumWidth(580)
 
         layout = QVBoxLayout(self)
@@ -2304,37 +2305,37 @@ class SettingsDialog(QDialog):
         db_row = QHBoxLayout()
         self.db_edit = QLineEdit(os.path.dirname(current))
         db_row.addWidget(self.db_edit, 1)
-        browse = QPushButton("Обзор…")
+        browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse_db)
         db_row.addWidget(browse)
         db_wrap = QWidget()
         db_wrap.setLayout(db_row)
-        form.addRow("Папка базы данных:", db_wrap)
+        form.addRow("Database folder:", db_wrap)
 
-        info = QLabel(f"Файл базы — analyzer.db в выбранной папке.\nТекущий: {current}")
+        info = QLabel(f"The database file is analyzer.db in the chosen folder.\nCurrent: {current}")
         info.setWordWrap(True)
         form.addRow("", info)
 
-        tg_btn = QPushButton("Настроить Telegram…")
+        tg_btn = QPushButton("Configure Telegram…")
         tg_btn.clicked.connect(lambda: TelegramDialog(self).exec())
-        form.addRow("Уведомления:", tg_btn)
+        form.addRow("Notifications:", tg_btn)
 
         # --- управление базой данных
         self._cur_db = current
         self.db_size_lbl = QLabel("")
-        form.addRow("Размер базы:", self.db_size_lbl)
+        form.addRow("Database size:", self.db_size_lbl)
 
         self.scans_tree = QTreeWidget()
         self.scans_tree.setColumnCount(2)
-        self.scans_tree.setHeaderLabels(["Снимок (папка/бакет)", "Объектов"])
+        self.scans_tree.setHeaderLabels(["Snapshot (folder/bucket)", "Items"])
         self.scans_tree.setRootIsDecorated(False)
         self.scans_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        form.addRow("Снимки:", self.scans_tree)
+        form.addRow("Snapshots:", self.scans_tree)
 
         db_btns = QHBoxLayout()
-        vacuum_btn = QPushButton("Сжать базу (VACUUM)")
+        vacuum_btn = QPushButton("Compact Database (VACUUM)")
         vacuum_btn.clicked.connect(self._vacuum)
-        del_snap_btn = QPushButton("Удалить выбранный снимок")
+        del_snap_btn = QPushButton("Delete Selected Snapshot")
         del_snap_btn.clicked.connect(self._delete_snapshot)
         db_btns.addWidget(vacuum_btn)
         db_btns.addWidget(del_snap_btn)
@@ -2348,9 +2349,10 @@ class SettingsDialog(QDialog):
         self._refresh_db_info()
 
         row = QHBoxLayout()
-        save = QPushButton("Сохранить")
+        save = QPushButton("Save")
+        save.setDefault(True)
         save.clicked.connect(self._save)
-        close = QPushButton("Закрыть")
+        close = QPushButton("Close")
         close.clicked.connect(self.reject)
         row.addStretch(1)
         row.addWidget(save)
@@ -2359,7 +2361,7 @@ class SettingsDialog(QDialog):
 
     def _browse_db(self) -> None:
         start = self.db_edit.text().strip() or os.path.expanduser("~")
-        d = QFileDialog.getExistingDirectory(self, "Папка для базы данных", start)
+        d = QFileDialog.getExistingDirectory(self, "Database Folder", start)
         if d:
             self.db_edit.setText(os.path.normpath(d))
 
@@ -2376,7 +2378,7 @@ class SettingsDialog(QDialog):
         try:
             db = FileDatabase(self._cur_db)
             for root_orig, _last, count in db.list_scans():
-                QTreeWidgetItem(self.scans_tree, [root_orig, f"{count:,}".replace(",", " ")])
+                QTreeWidgetItem(self.scans_tree, [root_orig, f"{count:,}"])
             db.close()
         except Exception:  # noqa: BLE001
             pass
@@ -2389,10 +2391,10 @@ class SettingsDialog(QDialog):
             db.vacuum()
             after = db.size_bytes()
             db.close()
-            self.status.setText(f"База сжата: {human_size(before)} → {human_size(after)}")
+            self.status.setText(f"Database compacted: {human_size(before)} → {human_size(after)}")
             self.status.setStyleSheet("color:#27ae60;")
         except Exception as exc:  # noqa: BLE001
-            self.status.setText(f"Не удалось сжать: {exc}")
+            self.status.setText(f"Could not compact: {exc}")
             self.status.setStyleSheet("color:#c0392b;")
         self.unsetCursor()
         self._refresh_db_info()
@@ -2400,12 +2402,12 @@ class SettingsDialog(QDialog):
     def _delete_snapshot(self) -> None:
         item = self.scans_tree.currentItem()
         if item is None:
-            self.status.setText("Выберите снимок в списке.")
+            self.status.setText("Select a snapshot in the list.")
             return
         root = item.text(0)
         if QMessageBox.question(
-            self, "Удалить снимок",
-            f"Удалить из базы снимок:\n{root}?\n(данные на диске/в хранилище не трогаются)",
+            self, "Delete Snapshot",
+            f"Delete this snapshot from the database:\n{root}?\n(files on disk/in storage are not touched)",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         ) != QMessageBox.Yes:
             return
@@ -2413,25 +2415,25 @@ class SettingsDialog(QDialog):
             db = FileDatabase(self._cur_db)
             db.delete_scan(root)
             db.close()
-            self.status.setText("Снимок удалён. Для освобождения места нажмите «Сжать базу».")
+            self.status.setText("Snapshot deleted. Click “Compact Database” to free the space.")
             self.status.setStyleSheet("color:#27ae60;")
         except Exception as exc:  # noqa: BLE001
-            self.status.setText(f"Ошибка: {exc}")
+            self.status.setText(f"Error: {exc}")
             self.status.setStyleSheet("color:#c0392b;")
         self._refresh_db_info()
 
     def _save(self) -> None:
         folder = self.db_edit.text().strip().strip('"')
         if not folder:
-            self.status.setText("Укажите папку.")
+            self.status.setText("Specify a folder.")
             return
         try:
             os.makedirs(folder, exist_ok=True)
         except OSError as exc:
-            self.status.setText(f"Папка недоступна: {exc}")
+            self.status.setText(f"Folder not available: {exc}")
             return
         app_settings.set_db_path(os.path.join(folder, "analyzer.db"))
-        self.status.setText("Сохранено. Путь к базе обновлён (применится к следующему анализу).")
+        self.status.setText("Saved. The database path is updated (applies to the next analysis).")
         self.status.setStyleSheet("color:#27ae60;")
 
 
@@ -2482,11 +2484,11 @@ class ConditionRow(QWidget):
         kind = self.type_combo.currentData()
         op = num = unit = date = text = cat = False
         if kind == "age":
-            self._set(self.op_combo, [("старше", "older"), ("младше", "newer")])
+            self._set(self.op_combo, [("older than", "older"), ("newer than", "newer")])
             self._set(self.unit_combo, [(u, u) for u in rules.AGE_UNITS])
             op = num = unit = date = True
         elif kind == "size":
-            self._set(self.op_combo, [("больше", "gt"), ("меньше", "lt")])
+            self._set(self.op_combo, [("larger than", "gt"), ("smaller than", "lt")])
             self._set(self.unit_combo, [(u, u) for u in rules.SIZE_UNITS])
             op = num = unit = True
         elif kind == "ext":
@@ -2495,9 +2497,9 @@ class ConditionRow(QWidget):
         elif kind == "category":
             cat = True
         elif kind == "name":
-            self._set(self.op_combo, [("содержит", "contains"),
-                                      ("маска", "wildcard"), ("регэксп", "regex")])
-            self.text_edit.setPlaceholderText("текст, ~$* или регэксп")
+            self._set(self.op_combo, [("contains", "contains"),
+                                      ("wildcard", "wildcard"), ("regex", "regex")])
+            self.text_edit.setPlaceholderText("text, ~$* or regex")
             op = text = True
         elif kind == "author":
             self.text_edit.setPlaceholderText(ui.AUTHOR_HINT)
@@ -2540,7 +2542,7 @@ class RulesDialog(QDialog):
     def __init__(self, parent=None, entries=None, root="", categories=None,
                  recursive=True, include_dirs=False, read_authors=False) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Правила: условия → действие")
+        self.setWindowTitle("Rules: condition → action")
         self.resize(860, 680)
         self.entries = entries or []
         self.root = root or ""
@@ -2554,42 +2556,42 @@ class RulesDialog(QDialog):
         layout = QVBoxLayout(self)
 
         name_row = QHBoxLayout()
-        name_row.addWidget(QLabel("Имя правила:"))
+        name_row.addWidget(QLabel("Rule name:"))
         self.name_edit = QLineEdit(_safe_task_name(self.root).replace("scan_", "rule_"))
         name_row.addWidget(self.name_edit, 1)
         layout.addLayout(name_row)
 
-        layout.addWidget(QLabel("Условия (объединяются по «И»):"))
+        layout.addWidget(QLabel("Conditions (combined with AND):"))
 
         self._cond_area = QVBoxLayout()
         wrap = QWidget()
         wrap.setLayout(self._cond_area)
         layout.addWidget(wrap)
 
-        add_btn = QPushButton("+ Добавить условие")
+        add_btn = QPushButton("+ Add Condition")
         add_btn.setAutoDefault(False)
         add_btn.clicked.connect(self._add_row)
         layout.addWidget(add_btn, alignment=Qt.AlignLeft)
 
-        act_box = QGroupBox("Действие: переместить совпавшие файлы в папку")
+        act_box = QGroupBox("Action: move matching files to a folder")
         act_lay = QHBoxLayout(act_box)
-        act_lay.addWidget(QLabel("Папка назначения:"))
+        act_lay.addWidget(QLabel("Destination folder:"))
         self.target_edit = QLineEdit()
         self.target_edit.setPlaceholderText(ui.TARGET_HINT)
         act_lay.addWidget(self.target_edit, 1)
-        browse = QPushButton("Обзор…")
+        browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse_target)
         act_lay.addWidget(browse)
         layout.addWidget(act_box)
 
         btns = QHBoxLayout()
-        find_btn = QPushButton("Найти совпадения")
+        find_btn = QPushButton("Find Matches")
         find_btn.setDefault(True)
         find_btn.clicked.connect(self._find)
-        self.export_btn = QPushButton("Экспорт списка (CSV)")
+        self.export_btn = QPushButton("Export List (CSV)")
         self.export_btn.clicked.connect(self._export)
         self.export_btn.setEnabled(False)
-        self.move_btn = QPushButton("Выполнить перемещение")
+        self.move_btn = QPushButton("Move Files")
         self.move_btn.clicked.connect(self._move)
         self.move_btn.setEnabled(False)
         btns.addWidget(find_btn)
@@ -2602,18 +2604,18 @@ class RulesDialog(QDialog):
         layout.addWidget(self.summary)
 
         self.preview = QTableWidget(0, 5)
-        self.preview.setHorizontalHeaderLabels(["Имя", "Размер", "Категория", "Изменён", "Путь"])
+        self.preview.setHorizontalHeaderLabels(["Name", "Size", "Category", "Modified", "Path"])
         self.preview.horizontalHeader().setStretchLastSection(True)
         self.preview.setEditTriggers(QTableWidget.NoEditTriggers)
         self.preview.verticalHeader().setVisible(False)
         layout.addWidget(self.preview, 1)
 
         # --- автоархивация по расписанию
-        sched_box = QGroupBox("Автоархивация по расписанию (без подтверждения)")
+        sched_box = QGroupBox("Scheduled auto-archiving (no confirmation)")
         sched_lay = QHBoxLayout(sched_box)
-        sched_lay.addWidget(QLabel("Периодичность:"))
+        sched_lay.addWidget(QLabel("Frequency:"))
         self.sched_freq = QComboBox()
-        self.sched_freq.addItems(["Каждый день", "Каждые N часов", "Каждые N минут"])
+        self.sched_freq.addItems(["Daily", "Every N hours", "Every N minutes"])
         self.sched_freq.currentIndexChanged.connect(self._update_sched_widgets)
         sched_lay.addWidget(self.sched_freq)
         sched_lay.addWidget(QLabel("N:"))
@@ -2621,24 +2623,24 @@ class RulesDialog(QDialog):
         self.sched_interval.setRange(1, 999)
         self.sched_interval.setValue(6)
         sched_lay.addWidget(self.sched_interval)
-        sched_lay.addWidget(QLabel("Время:"))
+        sched_lay.addWidget(QLabel("Time:"))
         self.sched_time = QTimeEdit(QTime(3, 0))
         self.sched_time.setDisplayFormat("HH:mm")
         sched_lay.addWidget(self.sched_time)
-        self.sched_system_cb = QCheckBox("как служба (SYSTEM)")
+        self.sched_system_cb = QCheckBox("as a service (SYSTEM)")
         self.sched_system_cb.setToolTip(
-            "Выполнять в фоне от имени SYSTEM без входа в систему "
-            "(нужны права администратора при создании)."
+            "Run in the background as SYSTEM without a logged-in user "
+            "(administrator rights are needed to create it)."
         )
         self.sched_system_cb.setVisible(sys.platform == "win32")
         sched_lay.addWidget(self.sched_system_cb)
         sched_lay.addStretch(1)
-        self.sched_btn = QPushButton("Создать задание автоархивации")
+        self.sched_btn = QPushButton("Create Auto-Archiving Task")
         self.sched_btn.clicked.connect(self._schedule)
         sched_lay.addWidget(self.sched_btn)
         layout.addWidget(sched_box)
 
-        close_btn = QPushButton("Закрыть")
+        close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn, alignment=Qt.AlignRight)
 
@@ -2659,7 +2661,7 @@ class RulesDialog(QDialog):
 
     def _browse_target(self) -> None:
         start = self.target_edit.text().strip() or os.path.expanduser("~")
-        d = QFileDialog.getExistingDirectory(self, "Папка назначения", start)
+        d = QFileDialog.getExistingDirectory(self, "Destination Folder", start)
         if d:
             self.target_edit.setText(os.path.normpath(d))
 
@@ -2676,12 +2678,12 @@ class RulesDialog(QDialog):
         import time
         conds = self._conditions()
         if not conds:
-            self.summary.setText("Задайте хотя бы одно условие.")
+            self.summary.setText("Add at least one condition.")
             return
         self.matched = rules.evaluate(self.entries, conds, time.time(), include_dirs=False)
         total = sum(e.size for e in self.matched)
         self.summary.setText(
-            f"Совпало файлов: {len(self.matched)} · объём: {human_size(total)}"
+            f"Matched files: {len(self.matched)} · total: {human_size(total)}"
         )
         self._fill_preview()
         has = bool(self.matched)
@@ -2704,32 +2706,32 @@ class RulesDialog(QDialog):
     def _export(self) -> None:
         if not self.matched:
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Сохранить список", "matched.csv", "CSV (*.csv)")
+        path, _ = QFileDialog.getSaveFileName(self, "Save List", "matched.csv", "CSV (*.csv)")
         if not path:
             return
         try:
             rules.export_csv(self.matched, path)
-            QMessageBox.information(self, "Готово", f"Сохранено строк: {len(self.matched)}")
+            QMessageBox.information(self, "Done", f"Rows saved: {len(self.matched)}")
         except OSError as exc:
-            QMessageBox.critical(self, "Ошибка", str(exc))
+            QMessageBox.critical(self, "Error", str(exc))
 
     def _move(self) -> None:
         if not self.matched:
             return
         target = os.path.expanduser(self.target_edit.text().strip().strip('"'))
         if not target:
-            QMessageBox.warning(self, "Нет папки", "Укажите папку назначения.")
+            QMessageBox.warning(self, "No folder", "Specify the destination folder.")
             return
         if self.root and _is_inside(target, self.root):
             QMessageBox.warning(
-                self, "Недопустимо",
-                "Папка назначения не должна находиться внутри анализируемой папки.",
+                self, "Not allowed",
+                "The destination folder must not be inside the analyzed folder.",
             )
             return
         total = sum(e.size for e in self.matched)
         ans = QMessageBox.question(
-            self, "Подтверждение",
-            f"Переместить {len(self.matched)} файлов ({human_size(total)}) в:\n{target}\n\nПродолжить?",
+            self, "Confirm",
+            f"Move {len(self.matched)} files ({human_size(total)}) to:\n{target}\n\nContinue?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if ans != QMessageBox.Yes:
@@ -2737,15 +2739,15 @@ class RulesDialog(QDialog):
         self.setCursor(Qt.WaitCursor)
         moved, freed, errors = rules.execute_move(self.matched, self.root or "", target)
         self.unsetCursor()
-        msg = f"Перемещено: {moved} файлов, освобождено {human_size(freed)}."
+        msg = f"Moved: {moved} files, freed {human_size(freed)}."
         if errors:
-            msg += f"\n\nОшибок: {len(errors)}\n" + "\n".join(errors[:5])
+            msg += f"\n\nErrors: {len(errors)}\n" + "\n".join(errors[:5])
             if len(errors) > 5:
-                msg += f"\n…и ещё {len(errors) - 5}."
-        QMessageBox.information(self, "Готово", msg)
+                msg += f"\n…and {len(errors) - 5} more."
+        QMessageBox.information(self, "Done", msg)
         self.matched = [e for e in self.matched if os.path.exists(e.path)]
         self._fill_preview()
-        self.summary.setText(f"Осталось в списке: {len(self.matched)}")
+        self.summary.setText(f"Left in the list: {len(self.matched)}")
         self.move_btn.setEnabled(bool(self.matched))
         self.export_btn.setEnabled(bool(self.matched))
 
@@ -2759,32 +2761,32 @@ class RulesDialog(QDialog):
         conds = self._conditions()
         target = os.path.expanduser(self.target_edit.text().strip().strip('"'))
         if not name:
-            QMessageBox.warning(self, "Имя", "Укажите имя правила.")
+            QMessageBox.warning(self, "Name", "Specify the rule name.")
             return
         if not conds:
-            QMessageBox.warning(self, "Условия", "Задайте хотя бы одно условие.")
+            QMessageBox.warning(self, "Conditions", "Add at least one condition.")
             return
         if not target:
-            QMessageBox.warning(self, "Папка", "Укажите папку назначения для переноса.")
+            QMessageBox.warning(self, "Folder", "Specify the destination folder for moving files.")
             return
         if not self.root or not os.path.isdir(self.root):
             QMessageBox.warning(
-                self, "Папка анализа",
-                "Анализируемая папка недоступна — её путь нужен для запланированного запуска.",
+                self, "Analyzed folder",
+                "The analyzed folder is not available — its path is needed for the scheduled run.",
             )
             return
         if _is_inside(target, self.root):
             QMessageBox.warning(
-                self, "Недопустимо",
-                "Папка назначения не должна находиться внутри анализируемой папки.",
+                self, "Not allowed",
+                "The destination folder must not be inside the analyzed folder.",
             )
             return
 
         ans = QMessageBox.question(
-            self, "Автоархивация по расписанию",
-            "Задание будет ПО РАСПИСАНИЮ, без окна и без подтверждения, "
-            "перемещать подходящие под условия файлы:\n\n"
-            f"из:  {self.root}\nв:   {target}\n\nСоздать задание?",
+            self, "Scheduled Auto-Archiving",
+            "The task will move files that match the conditions ON A SCHEDULE, "
+            "with no window and no confirmation:\n\n"
+            f"from:  {self.root}\nto:    {target}\n\nCreate the task?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if ans != QMessageBox.Yes:
@@ -2808,12 +2810,12 @@ class RulesDialog(QDialog):
         )
         if ok:
             QMessageBox.information(
-                self, "Готово",
-                f"Задание автоархивации «{name}» создано.\n"
-                "Управлять (запустить сейчас / удалить) можно кнопкой «Расписание…».",
+                self, "Done",
+                f"Auto-archiving task “{name}” created.\n"
+                "You can run it now or delete it with the “Schedule…” button.",
             )
         else:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось создать задание:\n{msg}")
+            QMessageBox.critical(self, "Error", f"Could not create the task:\n{msg}")
 
 
 def _safe_task_name(path: str) -> str:
@@ -2828,7 +2830,7 @@ class ScheduleDialog(QDialog):
     def __init__(self, parent=None, path="", db_path=None,
                  recursive=True, include_dirs=True, read_authors=False, mode="file") -> None:
         super().__init__(parent)
-        self.setWindowTitle("Запуск анализа по расписанию")
+        self.setWindowTitle("Scheduled Analysis")
         self.setMinimumWidth(560)
         self.db_path = db_path
         self.mode = mode
@@ -2840,35 +2842,35 @@ class ScheduleDialog(QDialog):
         self.path_edit = QLineEdit(path)
         if mode == "s3":
             self.path_edit.setReadOnly(True)
-            form.addRow("Бакет S3:", self.path_edit)
+            form.addRow("S3 bucket:", self.path_edit)
         else:
             self.path_edit.setPlaceholderText(ui.PATH_HINT)
-            form.addRow("Папка:", self.path_edit)
+            form.addRow("Folder:", self.path_edit)
 
-        default_name = ("s3_" + path) if mode == "s3" else _safe_task_name(path)
-        self.name_edit = QLineEdit(_safe_task_name(default_name))
-        form.addRow("Имя задания:", self.name_edit)
+        default_name = _safe_task_name(("s3_" + path) if mode == "s3" else path)
+        self.name_edit = QLineEdit(default_name)
+        form.addRow("Task name:", self.name_edit)
 
         # периодичность
         self.freq_combo = QComboBox()
-        self.freq_combo.addItems(["Каждый день", "Каждые N часов", "Каждые N минут"])
+        self.freq_combo.addItems(["Daily", "Every N hours", "Every N minutes"])
         self.freq_combo.currentIndexChanged.connect(self._update_freq_widgets)
-        form.addRow("Периодичность:", self.freq_combo)
+        form.addRow("Frequency:", self.freq_combo)
 
         self.interval_spin = QSpinBox()
         self.interval_spin.setRange(1, 999)
         self.interval_spin.setValue(6)
-        form.addRow("Интервал N:", self.interval_spin)
+        form.addRow("Interval N:", self.interval_spin)
 
         self.time_edit = QTimeEdit(QTime(3, 0))
         self.time_edit.setDisplayFormat("HH:mm")
-        form.addRow("Время запуска:", self.time_edit)
+        form.addRow("Start time:", self.time_edit)
 
-        self.authors_cb = QCheckBox("Определять автора (медленнее)")
+        self.authors_cb = QCheckBox("Detect author (slower)")
         self.authors_cb.setChecked(read_authors)
         self.authors_cb.setVisible(mode != "s3")
         form.addRow("", self.authors_cb)
-        self.recursive_cb = QCheckBox("С подпапками")
+        self.recursive_cb = QCheckBox("Include subfolders")
         self.recursive_cb.setChecked(recursive)
         self.recursive_cb.setVisible(mode != "s3")
         form.addRow("", self.recursive_cb)
@@ -2876,8 +2878,8 @@ class ScheduleDialog(QDialog):
 
         # уведомление в Telegram при превышении размера папки/бакета
         notify_row = QHBoxLayout()
-        label = "Уведомлять в Telegram, если размер бакета ≥" if mode == "s3" else \
-                "Уведомлять в Telegram, если размер папки ≥"
+        label = "Notify in Telegram when the bucket size is ≥" if mode == "s3" else \
+                "Notify in Telegram when the folder size is ≥"
         self.notify_cb = QCheckBox(label)
         notify_row.addWidget(self.notify_cb)
         self.notify_size = QDoubleSpinBox()
@@ -2887,8 +2889,8 @@ class ScheduleDialog(QDialog):
         self.notify_size.setEnabled(False)
         notify_row.addWidget(self.notify_size)
         self.notify_unit = QComboBox()
-        self.notify_unit.addItems(["МБ", "ГБ", "ТБ"])
-        self.notify_unit.setCurrentText("ГБ")
+        self.notify_unit.addItems(["MB", "GB", "TB"])
+        self.notify_unit.setCurrentText("GB")
         self.notify_unit.setEnabled(False)
         notify_row.addWidget(self.notify_unit)
         notify_row.addStretch(1)
@@ -2899,20 +2901,20 @@ class ScheduleDialog(QDialog):
         form.addRow("", notify_wrap)
 
         self.system_cb = QCheckBox(
-            "Запускать в фоне как службу (от SYSTEM, без входа в систему)"
+            "Run in the background as a service (as SYSTEM, without a logged-in user)"
         )
         self.system_cb.setToolTip(
-            "Задание будет выполняться от имени SYSTEM в фоне даже без входа "
-            "пользователя. Для создания нужны права администратора."
+            "The task runs as SYSTEM in the background even when no user is logged in. "
+            "Creating it requires administrator rights."
         )
         self.system_cb.setVisible(sys.platform == "win32")  # на Unix — от пользователя
         form.addRow("", self.system_cb)
         if sys.platform != "win32":
             backend = QLabel(
-                "Задания выполняет launchd от вашего пользователя (пока Mac не выключен "
-                "и вы вошли в систему). Журнал — в папке данных программы, logs/."
+                "Tasks are run by launchd as your user (while the Mac is on "
+                "and you are logged in). Logs are in the app data folder, logs/."
                 if sys.platform == "darwin" else
-                "Задания выполняет cron от вашего пользователя."
+                "Tasks are run by cron as your user."
             )
             backend.setWordWrap(True)
             backend.setForegroundRole(QPalette.PlaceholderText)
@@ -2922,23 +2924,23 @@ class ScheduleDialog(QDialog):
         self.hint.setWordWrap(True)
         form.addRow("", self.hint)
 
-        create_btn = QPushButton("Создать / обновить задание")
+        create_btn = QPushButton("Create / Update Task")
         create_btn.clicked.connect(self._create)
         layout.addWidget(create_btn)
 
-        layout.addWidget(QLabel("Существующие задания:"))
+        layout.addWidget(QLabel("Existing tasks:"))
         self.tasks = QTreeWidget()
         self.tasks.setColumnCount(3)
-        self.tasks.setHeaderLabels(["Задание", "Следующий запуск", "Статус"])
+        self.tasks.setHeaderLabels(["Task", "Next run", "Status"])
         self.tasks.setRootIsDecorated(False)
         layout.addWidget(self.tasks, 1)
 
         row = QHBoxLayout()
-        run_btn = QPushButton("Запустить сейчас")
+        run_btn = QPushButton("Run Now")
         run_btn.clicked.connect(self._run_now)
-        del_btn = QPushButton("Удалить задание")
+        del_btn = QPushButton("Delete Task")
         del_btn.clicked.connect(self._delete)
-        close_btn = QPushButton("Закрыть")
+        close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
         row.addWidget(run_btn)
         row.addWidget(del_btn)
@@ -2967,10 +2969,10 @@ class ScheduleDialog(QDialog):
         path = os.path.expanduser(self.path_edit.text().strip().strip('"'))
         name = self.name_edit.text().strip()
         if self.mode != "s3" and not os.path.isdir(path):
-            self.hint.setText("Папка недоступна или не существует.")
+            self.hint.setText("The folder is not available or does not exist.")
             return
         if not name:
-            self.hint.setText("Укажите имя задания.")
+            self.hint.setText("Specify the task name.")
             return
         notify_bytes = 0
         if self.notify_cb.isChecked():
@@ -2978,9 +2980,9 @@ class ScheduleDialog(QDialog):
             token, chat = app_settings.get_telegram()
             if not token or not chat:
                 ans = QMessageBox.question(
-                    self, "Telegram не настроен",
-                    "Уведомления включены, но бот/чат Telegram ещё не заданы.\n"
-                    "Открыть настройки Telegram сейчас?",
+                    self, "Telegram is not set up",
+                    "Notifications are enabled, but the Telegram bot/chat is not configured yet.\n"
+                    "Open the Telegram settings now?",
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
                 )
                 if ans == QMessageBox.Yes:
@@ -3007,25 +3009,25 @@ class ScheduleDialog(QDialog):
                 notify_size=notify_bytes,
                 run_as_system=self.system_cb.isChecked(),
             )
-        self.hint.setText("Задание создано." if ok else f"Не удалось: {msg}")
+        self.hint.setText("Task created." if ok else f"Failed: {msg}")
         self._refresh_tasks()
 
     def _delete(self) -> None:
         name = self._selected_task()
         if not name:
-            self.hint.setText("Выберите задание в списке.")
+            self.hint.setText("Select a task in the list.")
             return
         ok, msg = schedule_task.delete_task(name)
-        self.hint.setText("Задание удалено." if ok else f"Не удалось: {msg}")
+        self.hint.setText("Task deleted." if ok else f"Failed: {msg}")
         self._refresh_tasks()
 
     def _run_now(self) -> None:
         name = self._selected_task()
         if not name:
-            self.hint.setText("Выберите задание в списке.")
+            self.hint.setText("Select a task in the list.")
             return
         ok, msg = schedule_task.run_task_now(name)
-        self.hint.setText("Задание запущено." if ok else f"Не удалось: {msg}")
+        self.hint.setText("Task started." if ok else f"Failed: {msg}")
 
 
 def run_cli(argv) -> int:
@@ -3035,17 +3037,17 @@ def run_cli(argv) -> int:
 
     from scanner import run_scan
 
-    parser = argparse.ArgumentParser(description="Инкрементный анализ папки в базу")
-    parser.add_argument("--scan", required=True, help="путь к папке")
+    parser = argparse.ArgumentParser(description="Incremental folder analysis into the database")
+    parser.add_argument("--scan", required=True, help="folder path")
     parser.add_argument("--no-recursive", action="store_true")
     parser.add_argument("--no-dirs", action="store_true")
     parser.add_argument("--authors", action="store_true")
     parser.add_argument("--db", default=None)
-    parser.add_argument("--full", action="store_true", help="полный (не инкрементный) анализ")
+    parser.add_argument("--full", action="store_true", help="full (non-incremental) analysis")
     parser.add_argument("--notify-size", type=int, default=0, dest="notify_size",
-                        help="порог размера папки (байт): при превышении — уведомление в Telegram")
+                        help="folder size threshold (bytes): send a Telegram notification when exceeded")
     parser.add_argument("--settings-file", default=None, dest="settings_file",
-                        help="путь к settings.json (для запуска от SYSTEM)")
+                        help="path to settings.json (for runs as SYSTEM)")
     args = parser.parse_args(argv)
 
     db_path = args.db or default_db_path()
@@ -3060,10 +3062,10 @@ def run_cli(argv) -> int:
             scan_time=time.time(),
         )
     except Exception as exc:  # noqa: BLE001
-        print(f"Ошибка: {exc}", file=sys.stderr)
+        print(f"Error: {exc}", file=sys.stderr)
         return 1
-    print(f"Готово: всего {info['total']}, файлов {info['files']}, "
-          f"новых/изменённых {info['changed']}, удалено {info['deleted']}")
+    print(f"Done: total {info['total']}, files {info['files']}, "
+          f"new/changed {info['changed']}, deleted {info['deleted']}")
 
     if args.notify_size:
         import datetime
@@ -3072,14 +3074,14 @@ def run_cli(argv) -> int:
         if total_size >= args.notify_size:
             stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             text = (
-                "⚠️ Превышен порог размера папки\n"
-                f"Папка: {args.scan}\n"
-                f"Размер: {human_size(total_size)} (порог {human_size(args.notify_size)})\n"
-                f"Файлов: {info['files']}\n"
-                f"Время: {stamp}"
+                "⚠️ Folder size threshold exceeded\n"
+                f"Folder: {args.scan}\n"
+                f"Size: {human_size(total_size)} (threshold {human_size(args.notify_size)})\n"
+                f"Files: {info['files']}\n"
+                f"Time: {stamp}"
             )
             ok, msg = notify.notify(text, args.settings_file)
-            print(f"Уведомление: {'отправлено' if ok else msg}")
+            print(f"Notification: {'sent' if ok else msg}")
     return 0
 
 
@@ -3089,14 +3091,14 @@ def run_apply_cli(argv) -> int:
     import datetime
     import time
 
-    parser = argparse.ArgumentParser(description="Автоархивация по правилу")
+    parser = argparse.ArgumentParser(description="Auto-archiving by rule")
     parser.add_argument("--apply-rule", required=True, dest="rule")
     parser.add_argument("--rules-file", default=None)
     args = parser.parse_args(argv)
 
     rule = rules.get_rule(args.rule, args.rules_file)
     if rule is None:
-        print(f"Правило не найдено: {args.rule}", file=sys.stderr)
+        print(f"Rule not found: {args.rule}", file=sys.stderr)
         return 2
 
     log_dir = os.path.join(app_settings.app_data_dir(), "logs")
@@ -3110,12 +3112,12 @@ def run_apply_cli(argv) -> int:
         print(msg)
 
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log(f"[{stamp}] Правило '{rule.name}': {rule.root} -> {rule.target}")
+    log(f"[{stamp}] Rule '{rule.name}': {rule.root} -> {rule.target}")
     code = 0
     try:
         rules.apply_rule(rule, time.time(), on_log=log)
     except Exception as exc:  # noqa: BLE001
-        log(f"Ошибка: {exc}")
+        log(f"Error: {exc}")
         code = 1
     try:
         with open(log_file, "a", encoding="utf-8") as f:
@@ -3131,7 +3133,7 @@ def run_s3_cli(argv) -> int:
     import datetime
     import time as _t
 
-    parser = argparse.ArgumentParser(description="Плановый анализ бакета S3")
+    parser = argparse.ArgumentParser(description="Scheduled S3 bucket analysis")
     parser.add_argument("--s3-scan", action="store_true")
     parser.add_argument("--db", default=None)
     parser.add_argument("--notify-size", type=int, default=0, dest="notify_size")
@@ -3140,7 +3142,7 @@ def run_s3_cli(argv) -> int:
 
     cfg_d = app_settings.get_s3(args.settings_file)
     if not cfg_d or not cfg_d.get("bucket"):
-        print("Профиль S3 не настроен.", file=sys.stderr)
+        print("S3 profile is not configured.", file=sys.stderr)
         return 2
     cfg = s3client.S3Config(**cfg_d)
     db_path = args.db or default_db_path()
@@ -3157,7 +3159,7 @@ def run_s3_cli(argv) -> int:
     try:
         entries = s3client.list_entries(cfg)
     except Exception as exc:  # noqa: BLE001
-        print(f"Ошибка S3: {exc}", file=sys.stderr)
+        print(f"S3 error: {exc}", file=sys.stderr)
         return 1
     info = incremental_stats(entries, prior)
     if db is not None:
@@ -3166,21 +3168,21 @@ def run_s3_cli(argv) -> int:
         except Exception:  # noqa: BLE001
             pass
         db.close()
-    print(f"S3 готово: всего {info['total']}, объектов {info['files']}, изменённых {info['changed']}")
+    print(f"S3 done: total {info['total']}, objects {info['files']}, changed {info['changed']}")
 
     if args.notify_size:
         total_size = sum(e.size for e in entries if not e.is_dir)
         if total_size >= args.notify_size:
             stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             text = (
-                "⚠️ Превышен порог размера бакета S3\n"
-                f"Бакет: {cfg.bucket}\n"
-                f"Размер: {human_size(total_size)} (порог {human_size(args.notify_size)})\n"
-                f"Объектов: {info['files']}\n"
-                f"Время: {stamp}"
+                "⚠️ S3 bucket size threshold exceeded\n"
+                f"Bucket: {cfg.bucket}\n"
+                f"Size: {human_size(total_size)} (threshold {human_size(args.notify_size)})\n"
+                f"Objects: {info['files']}\n"
+                f"Time: {stamp}"
             )
             ok, msg = notify.notify(text, args.settings_file)
-            print(f"Уведомление: {'отправлено' if ok else msg}")
+            print(f"Notification: {'sent' if ok else msg}")
     return 0
 
 
@@ -3205,16 +3207,9 @@ def main() -> None:
     app.setOrganizationName("FolderAnalyzer")
     app.setApplicationDisplayName(APP_TITLE)
     app.setApplicationVersion(APP_VERSION)
-    # русские подписи стандартных кнопок и диалогов Qt («Да/Нет», «Отмена»…)
-    from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
-    tr = QTranslator(app)
-    tr_dirs = [QLibraryInfo.path(QLibraryInfo.TranslationsPath)]
-    if getattr(sys, "_MEIPASS", None):
-        tr_dirs.insert(0, os.path.join(sys._MEIPASS, "PySide6", "Qt", "translations"))
-    for d in tr_dirs:
-        if tr.load(QLocale("ru_RU"), "qtbase", "_", d):
-            app.installTranslator(tr)
-            break
+    # английский формат чисел и дат в полях ввода (точка в дробях), независимо от региона ОС
+    from PySide6.QtCore import QLocale
+    QLocale.setDefault(QLocale(QLocale.English, QLocale.UnitedStates))
     ip = _icon_path()
     if ip and not getattr(sys, "frozen", False) or (ip and sys.platform != "darwin"):
         app.setWindowIcon(QIcon(ip))  # из собранного .app иконку берёт macOS

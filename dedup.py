@@ -13,11 +13,11 @@ from collections import defaultdict
 
 # доступные поля сравнения: (ключ, подпись)
 FIELDS = [
-    ("name", "Имя файла"),
-    ("size", "Размер"),
-    ("author", "Автор/владелец"),
-    ("created", "Дата создания"),
-    ("hash", "Хэш содержимого"),
+    ("name", "File name"),
+    ("size", "Size"),
+    ("author", "Author/owner"),
+    ("created", "Creation date"),
+    ("hash", "Content hash"),
 ]
 
 

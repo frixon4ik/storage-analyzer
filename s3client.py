@@ -72,13 +72,13 @@ def err_text(exc) -> str:
 
 def test_connection(cfg: S3Config) -> tuple[bool, str]:
     if not _AVAILABLE:
-        return False, "Библиотека boto3 не установлена."
+        return False, "The boto3 library is not installed."
     if not cfg.bucket:
-        return False, "Не указан бакет."
+        return False, "No bucket specified."
     try:
         client = make_client(cfg)
         client.head_bucket(Bucket=cfg.bucket)
-        return True, "Подключение успешно."
+        return True, "Connection successful."
     except Exception as exc:  # noqa: BLE001
         return False, err_text(exc)
 
@@ -110,7 +110,7 @@ def _dir_entry(rel_prefix: str, bucket: str) -> FileEntry:
     parent = bucket + ("/" + rel_parent if rel_parent else "")
     return FileEntry(
         name=name, path=bucket + "/" + rel_prefix, parent=parent, is_dir=True,
-        extension="", category="Папка", size=0, created=0.0, modified=0.0,
+        extension="", category="Folder", size=0, created=0.0, modified=0.0,
         accessed=0.0, author="",
     )
 
